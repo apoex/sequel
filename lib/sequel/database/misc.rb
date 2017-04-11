@@ -29,13 +29,14 @@ module Sequel
     # Module to be included in shared adapters so that when the DatabaseMethods are
     # included in the database, the identifier mangling defaults are reset correctly.
     module ResetIdentifierMangling
-      def extended(obj)
+      def self.extended(obj)
         # :nocov:
         Sequel::Deprecation.deprecate("Sequel::Database::ResetIdentifierMangling is no longer needed and will be removed in Sequel 5.  Please update your adapter.")
         obj.send(:reset_identifier_mangling) if obj.respond_to?(:reset_identifier_mangling)
         # :nocov:
       end
     end
+    Sequel::Deprecation.deprecate_constant(self, :ResetIdentifierMangling)
 
     # Nested hook Proc; each new hook Proc just wraps the previous one.
     @initialize_hook = Proc.new {|db| }
@@ -125,7 +126,7 @@ module Sequel
       @opts[:servers] = {} if @opts[:servers].is_a?(String)
       @sharded = !!@opts[:servers]
       @opts[:adapter_class] = self.class
-      @opts[:single_threaded] = @single_threaded = typecast_value_boolean(@opts.fetch(:single_threaded, Database.single_threaded))
+      @opts[:single_threaded] = @single_threaded = typecast_value_boolean(@opts.fetch(:single_threaded, Sequel.single_threaded))
       @default_string_column_size = @opts[:default_string_column_size] || DEFAULT_STRING_COLUMN_SIZE
 
       @schemas = {}
@@ -150,7 +151,7 @@ module Sequel
       reset_default_dataset
       adapter_initialize
       if typecast_value_boolean(@opts.fetch(:identifier_mangling, true))
-        extension(:identifier_mangling)
+        extension(:_deprecated_identifier_mangling)
       end
 
       unless typecast_value_boolean(@opts[:keep_reference]) == false
@@ -177,6 +178,12 @@ module Sequel
       # SEQUEL5: Frozen by default, remove this
       @default_dataset.freeze
       metadata_dataset.freeze
+      super
+    end
+
+    def initialize_copy(_)
+      Sequel::Deprecation.deprecate("Database#dup and #clone", "Use Sequel.connect to create a new Database instance")
+      # raise(Error, "cannot dup/clone a Sequel::Database instance") # SEQUEL5
       super
     end
 

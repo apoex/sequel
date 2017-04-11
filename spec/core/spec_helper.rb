@@ -10,12 +10,13 @@ unless Object.const_defined?('Sequel')
   $:.unshift(File.join(File.dirname(File.expand_path(__FILE__)), "../../lib/"))
   require 'sequel/core'
 end
-Sequel::Deprecation.backtrace_filter = lambda{|line, lineno| lineno < 4 || line =~ /_spec\.rb/}
 
 gem 'minitest'
 require 'minitest/autorun'
 require 'minitest/hooks/default'
 require 'minitest/shared_description'
+
+require "#{File.dirname(File.dirname(__FILE__))}/deprecation_helper.rb"
 
 class Minitest::HooksSpec
   def meta_def(obj, name, &block)
@@ -30,6 +31,10 @@ if ENV['SEQUEL_COLUMNS_INTROSPECTION']
   Sequel::Mock::Dataset.send(:include, Sequel::ColumnsIntrospection)
 end
 
+# SEQUEL5: Remove
+output = Sequel::Deprecation.output
+Sequel::Deprecation.output = nil
 Sequel.quote_identifiers = false
 Sequel.identifier_input_method = nil
 Sequel.identifier_output_method = nil
+Sequel::Deprecation.output = output

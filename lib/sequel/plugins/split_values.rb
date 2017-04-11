@@ -47,7 +47,11 @@ module Sequel
         # If there isn't an entry in the values hash, but there is a noncolumn_values
         # hash, look in that hash for the value.
         def [](k)
-          super || (@noncolumn_values[k] if !@values.has_key?(k) && @noncolumn_values)
+          if  (res = super).nil?
+            @noncolumn_values[k] if !@values.has_key?(k) && @noncolumn_values
+          else
+            res
+          end
         end
 
         # Check all entries in the values hash.  If any of the keys are not columns,

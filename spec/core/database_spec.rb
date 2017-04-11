@@ -5,11 +5,23 @@ describe "A new Database" do
     @db = Sequel::Database.new(1 => 2, :logger => 3)
   end
   after do
-    Sequel.quote_identifiers = false
-    Sequel.identifier_input_method = nil
-    Sequel.identifier_output_method = nil
+    deprecated do
+      Sequel.quote_identifiers = false
+      Sequel.identifier_input_method = nil
+      Sequel.identifier_output_method = nil
+    end
   end
   
+  deprecated "should allow dup/clone" do
+    @db.dup.must_be_kind_of @db.class
+    @db.clone.must_be_kind_of @db.class
+  end
+
+  it "should not allow dup/clone" do
+    proc{@db.dup}.must_raise Sequel::Error
+    proc{@db.clone}.must_raise Sequel::Error
+  end if false # SEQUEL5
+
   it "should receive options" do
     @db.opts[1].must_equal 2
     @db.opts[:logger].must_equal 3  
@@ -328,7 +340,7 @@ describe "Database#dataset" do
     e.sql.must_equal 'SELECT * FROM miu'
   end
   
-  it "should provide a filtered #from dataset if a block is given" do
+  deprecated "should provide a filtered #from dataset if a block is given" do
     d = @db.from(:mau){x.sql_number > 100}
     d.must_be_kind_of(Sequel::Dataset)
     d.sql.must_equal 'SELECT * FROM mau WHERE (x > 100)'
@@ -1375,7 +1387,7 @@ end
 
 describe "A single threaded database" do
   after do
-    Sequel::Database.single_threaded = false
+    Sequel.single_threaded = false
   end
   
   it "should use a SingleConnectionPool instead of a ConnectionPool" do
@@ -1388,14 +1400,17 @@ describe "A single threaded database" do
     db.pool.must_be_kind_of(Sequel::SingleConnectionPool)
   end
   
-  it "should be constructable using Database.single_threaded = true" do
+  deprecated "should be constructable using Database.single_threaded = true" do
     Sequel::Database.single_threaded = true
+    Sequel.single_threaded.must_equal true
+    Sequel::Database.single_threaded.must_equal true
     db = Sequel::Database.new{123}
     db.pool.must_be_kind_of(Sequel::SingleConnectionPool)
   end
 
   it "should be constructable using Sequel.single_threaded = true" do
     Sequel.single_threaded = true
+    Sequel.single_threaded.must_equal true
     db = Sequel::Database.new{123}
     db.pool.must_be_kind_of(Sequel::SingleConnectionPool)
   end
@@ -1440,7 +1455,7 @@ end
 
 describe "A database" do
   after do
-    Sequel::Database.single_threaded = false
+    Sequel.single_threaded = false
   end
   
   it "should have single_threaded? respond to true if in single threaded mode" do
@@ -1453,7 +1468,7 @@ describe "A database" do
     db = Sequel::Database.new
     db.wont_be :single_threaded?
     
-    Sequel::Database.single_threaded = true
+    Sequel.single_threaded = true
     
     db = Sequel::Database.new{123}
     db.must_be :single_threaded?
@@ -1719,8 +1734,28 @@ describe "Database#remove_servers" do
   end
 end
 
+describe "Database#add_servers and #remove_servers when not sharded" do
+  deprecated "should do nothing" do
+    db = Sequel.mock
+    db.opts[:servers].must_be_nil
+    db.add_servers(:foo=>{}).must_be_nil
+    db.opts[:servers].must_be_nil
+    db.remove_servers(:foo).must_be_nil
+    db.opts[:servers].must_be_nil
+  end
+
+  it "should raise Error" do
+    db = Sequel.mock
+    db.opts[:servers].must_be_nil
+    proc{db.add_servers(:foo=>{})}.must_raise Sequel::Error
+    db.opts[:servers].must_be_nil
+    proc{db.remove_servers(:foo)}.must_raise Sequel::Error
+    db.opts[:servers].must_be_nil
+  end if false # SEQUEL5
+end
+
 describe "Database#each_server with do/jdbc adapter connection string without :adapter option" do
-  it "should yield a separate database object for each server" do
+  deprecated "should yield a separate database object for each server" do
     require 'sequel/adapters/mock'
     klass = Class.new(Sequel::Database)
     def klass.adapter_class(v)
@@ -1740,7 +1775,7 @@ describe "Database#each_server with do/jdbc adapter connection string without :a
     hosts.sort.must_equal [1, 3]
   end
 
-  it "should raise if not given a block" do
+  deprecated "should raise if not given a block" do
     proc{Sequel.mock.each_server}.must_raise(Sequel::Error)
   end
 end
@@ -1750,7 +1785,7 @@ describe "Database#each_server" do
     @db = Sequel.mock(:host=>1, :database=>2, :servers=>{:server1=>{:host=>3}, :server2=>{:host=>4}})
   end
 
-  it "should yield a separate database object for each server" do
+  deprecated "should yield a separate database object for each server" do
     hosts = []
     @db.each_server do |db|
       db.must_be_kind_of(Sequel::Database)
@@ -1762,7 +1797,7 @@ describe "Database#each_server" do
     hosts.sort.must_equal [1, 3, 4]
   end
 
-  it "should disconnect and remove entry from Sequel::DATABASES after use" do
+  deprecated "should disconnect and remove entry from Sequel::DATABASES after use" do
     dbs = []
     dcs = []
     @db.each_server do |db|

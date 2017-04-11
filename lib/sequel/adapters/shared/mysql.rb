@@ -110,7 +110,16 @@ module Sequel
         remove_indexes = []
         m = output_identifier_meth
         im = input_identifier_meth
-        metadata_dataset.with_sql("SHOW INDEX FROM ?", SQL::Identifier.new(im.call(table))).each do |r|
+        schema, table = schema_and_table(table)
+
+        table = Sequel::SQL::Identifier.new(table)
+        sql = "SHOW INDEX FROM #{literal(table)}"
+        if schema
+          schema = Sequel::SQL::Identifier.new(schema)
+          sql += " FROM #{literal(schema)}"
+        end
+
+        metadata_dataset.with_sql(sql).each do |r|
           name = r[:Key_name]
           next if name == PRIMARY
           name = m.call(name)
@@ -181,6 +190,7 @@ module Sequel
       # Changes the database in use by issuing a USE statement.  I would be
       # very careful if I used this.
       def use(db_name)
+        Sequel::Deprecation.deprecate("Database#use", "Create a new Sequel::Database instance instead of using Database#use")
         disconnect
         @opts[:database] = db_name if self << "USE #{db_name}"
         @schemas = {}
@@ -861,6 +871,11 @@ module Sequel
       end
       
       private
+
+      # Allow update and delete for limited datasets, unless there is an offset.
+      def check_not_limited!(type)
+        super if type == :truncate || @opts[:offset]
+      end
 
       # Consider the first table in the joined dataset is the table to delete
       # from, but include the others for the purposes of selecting rows.

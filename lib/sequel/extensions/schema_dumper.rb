@@ -170,6 +170,8 @@ END_MIG
         [:table, :key, :on_delete, :on_update, :deferrable].each{|f| type_hash[f] = schema[f] if schema[f]}
         if type_hash == {:type=>Integer} || type_hash == {:type=>"integer"}
           type_hash.delete(:type)
+        elsif options[:same_db] && type_hash == {:type=>type_literal_generic_bignum_symbol(type_hash).to_s}
+          type_hash[:type] = :Bignum
         end
 
         unless gen.columns.empty?
@@ -243,7 +245,7 @@ END_MIG
     # Return a Schema::Generator object that will recreate the
     # table's schema.  Takes the same options as dump_schema_migration.
     def dump_table_generator(table, options=OPTS)
-      s = schema(table).dup
+      s = schema(table, options).dup
       pks = s.find_all{|x| x.last[:primary_key] == true}.map(&:first)
       options = options.merge(:single_pk=>true) if pks.length == 1
       m = method(:recreate_column)

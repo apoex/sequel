@@ -447,12 +447,14 @@ describe Sequel::Model, "many_to_one" do
     DB.reset
     d.parent_id = 234
     d.associations[:parent] = 42
-    d.parent(true).wont_equal 42 
-    DB.sqls.must_equal ["SELECT * FROM nodes WHERE id = 234"]
     d.parent(:reload=>true).wont_equal 42 
     DB.sqls.must_equal ["SELECT * FROM nodes WHERE id = 234"]
-    d.parent(Object.new).wont_equal 42 
-    DB.sqls.must_equal ["SELECT * FROM nodes WHERE id = 234"]
+    deprecated do
+      d.parent(true).wont_equal 42 
+      DB.sqls.must_equal ["SELECT * FROM nodes WHERE id = 234"]
+      d.parent(Object.new).wont_equal 42 
+      DB.sqls.must_equal ["SELECT * FROM nodes WHERE id = 234"]
+    end
   end
   
   it "should use a callback if given one as the argument" do
@@ -462,7 +464,7 @@ describe Sequel::Model, "many_to_one" do
     DB.reset
     d.parent_id = 234
     d.associations[:parent] = 42
-    d.parent(proc{|ds| ds.filter{name > 'M'}}).wont_equal 42 
+    d.parent{|ds| ds.where{name > 'M'}}.wont_equal 42 
     DB.sqls.must_equal ["SELECT * FROM nodes WHERE ((nodes.id = 234) AND (name > 'M')) LIMIT 1"]
   end
   
@@ -995,8 +997,12 @@ describe Sequel::Model, "one_to_one" do
     @c2.one_to_one :parent, :class => @c2
     d = @c2.load(:id => 1)
     d.associations[:parent] = [42]
-    d.parent(true).wont_equal 42 
+    d.parent(:reload=>true).wont_equal 42 
     DB.sqls.must_equal ["SELECT * FROM nodes WHERE (nodes.node_id = 1) LIMIT 1"]
+    deprecated do
+      d.parent(true).wont_equal 42 
+      DB.sqls.must_equal ["SELECT * FROM nodes WHERE (nodes.node_id = 1) LIMIT 1"]
+    end
   end
   
   it "should have the setter set the reciprocal many_to_one cached association" do
@@ -1223,7 +1229,16 @@ describe Sequel::Model, "one_to_many" do
     end
   end
 
-  it "should use a callback if given one as the argument" do
+  it "should use a callback if given one as a block" do
+    @c2.one_to_many :attributes, :class => @c1, :key => :nodeid
+    
+    d = @c2.load(:id => 1234)
+    d.associations[:attributes] = []
+    d.attributes{|ds| ds.where{name > 'M'}}.wont_equal []
+    DB.sqls.must_equal ["SELECT * FROM attributes WHERE ((attributes.nodeid = 1234) AND (name > 'M'))"]
+  end
+  
+  deprecated "should use a callback if given one as the argument" do
     @c2.one_to_many :attributes, :class => @c1, :key => :nodeid
     
     d = @c2.load(:id => 1234)
@@ -1552,8 +1567,12 @@ describe Sequel::Model, "one_to_many" do
     @c2.one_to_many :attributes, :class => @c1
     n = @c2.new(:id => 1234)
     n.associations[:attributes] = 42
-    n.attributes(true).wont_equal 42
+    n.attributes(:reload=>true).wont_equal 42
     DB.sqls.must_equal ['SELECT * FROM attributes WHERE (attributes.node_id = 1234)']
+    deprecated do
+      n.attributes(true).wont_equal 42
+      DB.sqls.must_equal ['SELECT * FROM attributes WHERE (attributes.node_id = 1234)']
+    end
   end
 
   it "should add item to cache if it exists when calling add_" do
@@ -2008,13 +2027,19 @@ describe Sequel::Model, "many_to_many" do
     @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.id, attributes.b FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)'
   end
   
-  it "should not override a selection consisting completely of qualified columns using symbols" do
+  with_symbol_splitting "should not override a selection consisting completely of qualified columns using symbols" do
     @c1.dataset = @c1.dataset.select(:attributes__id, :attributes__b)
     @c2.many_to_many :attributes, :class => @c1
     @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.id, attributes.b FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)'
   end
   
   it "should not override a selection consisting completely of qualified columns using Sequel::SQL::AliasedExpression" do
+    @c1.dataset = @c1.dataset.select(Sequel.qualify(:attributes, :id).as(:a), Sequel[:attributes][:b].as(:c))
+    @c2.many_to_many :attributes, :class => @c1
+    @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.id AS a, attributes.b AS c FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)'
+  end
+  
+  with_symbol_splitting "should not override a selection consisting completely of qualified columns using Sequel::SQL::AliasedExpression with qualified symbol" do
     @c1.dataset = @c1.dataset.select(Sequel.qualify(:attributes, :id).as(:a), Sequel.as(:attributes__b, :c))
     @c2.many_to_many :attributes, :class => @c1
     @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.id AS a, attributes.b AS c FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)'
@@ -2027,7 +2052,7 @@ describe Sequel::Model, "many_to_many" do
   end
   
   it "should respect :eager_loader_predicate_key when lazily loading" do
-    @c2.many_to_many :attributes, :class => @c1, :eager_loading_predicate_key=>Sequel.subscript(:attributes_nodes__node_id, 0)
+    @c2.many_to_many :attributes, :class => @c1, :eager_loading_predicate_key=>Sequel.subscript(Sequel[:attributes_nodes][:node_id], 0)
     @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id[0] = 1234)'
   end
   
@@ -2091,7 +2116,7 @@ describe Sequel::Model, "many_to_many" do
   end
   
   it "should support an array for the select option" do
-    @c2.many_to_many :attributes, :class => @c1, :select => [Sequel::SQL::ColumnAll.new(:attributes), :attribute_nodes__blah2]
+    @c2.many_to_many :attributes, :class => @c1, :select => [Sequel::SQL::ColumnAll.new(:attributes), Sequel[:attribute_nodes][:blah2]]
 
     @c2.new(:id => 1234).attributes_dataset.sql.must_equal 'SELECT attributes.*, attribute_nodes.blah2 FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)'
   end
@@ -2118,7 +2143,7 @@ describe Sequel::Model, "many_to_many" do
 
   it "should support a :dataset option that is used instead of the default" do
     c1 = @c1
-    @c2.many_to_many :attributes, :class => @c1, :dataset=>proc{c1.join_table(:natural, :an).filter(:an__nodeid=>pk)}, :order=> :a, :limit=>10, :select=>nil do |ds|
+    @c2.many_to_many :attributes, :class => @c1, :dataset=>proc{c1.join_table(:natural, :an).filter(Sequel[:an][:nodeid]=>pk)}, :order=> :a, :limit=>10, :select=>nil do |ds|
       ds.filter(:xxx => @xxx)
     end
 
@@ -2130,7 +2155,7 @@ describe Sequel::Model, "many_to_many" do
   end
 
   it "should support a :dataset option that accepts the reflection as an argument" do
-    @c2.many_to_many :attributes, :class => @c1, :dataset=>lambda{|opts| opts.associated_class.natural_join(:an).filter(:an__nodeid=>pk)}, :order=> :a, :limit=>10, :select=>nil do |ds|
+    @c2.many_to_many :attributes, :class => @c1, :dataset=>lambda{|opts| opts.associated_class.natural_join(:an).filter(Sequel[:an][:nodeid]=>pk)}, :order=> :a, :limit=>10, :select=>nil do |ds|
       ds.filter(:xxx => @xxx)
     end
 
@@ -2154,6 +2179,22 @@ describe Sequel::Model, "many_to_many" do
   end
   
   it "should handle an aliased join table" do
+    @c2.many_to_many :attributes, :class => @c1, :join_table => Sequel[:attribute2node].as(:attributes_nodes)
+    n = @c2.load(:id => 1234)
+    a = @c1.load(:id => 2345)
+    n.attributes_dataset.sql.must_equal "SELECT attributes.* FROM attributes INNER JOIN attribute2node AS attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)"
+    a.must_equal n.add_attribute(a)
+    a.must_equal n.remove_attribute(a)
+    n.remove_all_attributes
+    sqls = DB.sqls
+    ['INSERT INTO attribute2node (node_id, attribute_id) VALUES (1234, 2345)',
+     'INSERT INTO attribute2node (attribute_id, node_id) VALUES (2345, 1234)'].must_include(sqls.shift)
+    ["DELETE FROM attribute2node WHERE ((node_id = 1234) AND (attribute_id = 2345))", 
+     "DELETE FROM attribute2node WHERE ((attribute_id = 2345) AND (node_id = 1234))"].must_include(sqls.shift)
+    sqls.must_equal ["DELETE FROM attribute2node WHERE (node_id = 1234)"]
+  end
+  
+  with_symbol_splitting "should handle an aliased symbol join table" do
     @c2.many_to_many :attributes, :class => @c1, :join_table => :attribute2node___attributes_nodes
     n = @c2.load(:id => 1234)
     a = @c1.load(:id => 2345)
@@ -2416,8 +2457,12 @@ describe Sequel::Model, "many_to_many" do
 
     n = @c2.new(:id => 1234)
     n.associations[:attributes] = 42
-    n.attributes(true).wont_equal 42
+    n.attributes(:reload=>true).wont_equal 42
     DB.sqls.must_equal ["SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)"]
+    deprecated do
+      n.attributes(true).wont_equal 42
+      DB.sqls.must_equal ["SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234)"]
+    end
   end
 
   it "should add item to cache if it exists when calling add_" do
@@ -2838,7 +2883,7 @@ describe Sequel::Model, "one_through_one" do
   end
   
   it "should respect :eager_loader_predicate_key when lazily loading" do
-    @c2.one_through_one :attribute, :class => @c1, :eager_loading_predicate_key=>Sequel.subscript(:attributes_nodes__node_id, 0)
+    @c2.one_through_one :attribute, :class => @c1, :eager_loading_predicate_key=>Sequel.subscript(Sequel[:attributes_nodes][:node_id], 0)
     @c2.new(:id => 1234).attribute_dataset.sql.must_equal 'SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id[0] = 1234) LIMIT 1'
   end
   
@@ -2902,7 +2947,7 @@ describe Sequel::Model, "one_through_one" do
   end
   
   it "should support an array for the select option" do
-    @c2.one_through_one :attribute, :class => @c1, :select => [Sequel::SQL::ColumnAll.new(:attributes), :attribute_nodes__blah2]
+    @c2.one_through_one :attribute, :class => @c1, :select => [Sequel::SQL::ColumnAll.new(:attributes), Sequel[:attribute_nodes][:blah2]]
 
     @c2.new(:id => 1234).attribute_dataset.sql.must_equal 'SELECT attributes.*, attribute_nodes.blah2 FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234) LIMIT 1'
   end
@@ -2929,7 +2974,7 @@ describe Sequel::Model, "one_through_one" do
 
   it "should support a :dataset option that is used instead of the default" do
     c1 = @c1
-    @c2.one_through_one :attribute, :class => @c1, :dataset=>proc{c1.join_table(:natural, :an).filter(:an__nodeid=>pk)}, :order=> :a, :select=>nil do |ds|
+    @c2.one_through_one :attribute, :class => @c1, :dataset=>proc{c1.join_table(:natural, :an).filter(Sequel[:an][:nodeid]=>pk)}, :order=> :a, :select=>nil do |ds|
       ds.filter(:xxx => @xxx)
     end
 
@@ -2941,7 +2986,7 @@ describe Sequel::Model, "one_through_one" do
   end
 
   it "should support a :dataset option that accepts the reflection as an argument" do
-    @c2.one_through_one :attribute, :class => @c1, :dataset=>lambda{|opts| opts.associated_class.natural_join(:an).filter(:an__nodeid=>pk)}, :order=> :a, :select=>nil do |ds|
+    @c2.one_through_one :attribute, :class => @c1, :dataset=>lambda{|opts| opts.associated_class.natural_join(:an).filter(Sequel[:an][:nodeid]=>pk)}, :order=> :a, :select=>nil do |ds|
       ds.filter(:xxx => @xxx)
     end
 
@@ -2963,6 +3008,12 @@ describe Sequel::Model, "one_through_one" do
   end
   
   it "should handle an aliased join table" do
+    @c2.one_through_one :attribute, :class => @c1, :join_table => Sequel[:attribute2node].as(:attributes_nodes)
+    n = @c2.load(:id => 1234)
+    n.attribute_dataset.sql.must_equal "SELECT attributes.* FROM attributes INNER JOIN attribute2node AS attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234) LIMIT 1"
+  end
+  
+  with_symbol_splitting "should handle an aliased join table with splittable symbol" do
     @c2.one_through_one :attribute, :class => @c1, :join_table => :attribute2node___attributes_nodes
     n = @c2.load(:id => 1234)
     n.attribute_dataset.sql.must_equal "SELECT attributes.* FROM attributes INNER JOIN attribute2node AS attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234) LIMIT 1"
@@ -3004,8 +3055,12 @@ describe Sequel::Model, "one_through_one" do
 
     n = @c2.new(:id => 1234)
     n.associations[:attribute] = 42
-    n.attribute(true).wont_equal 42
+    n.attribute(:reload=>true).wont_equal 42
     DB.sqls.must_equal ["SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234) LIMIT 1"]
+    deprecated do
+      n.attribute(true).wont_equal 42
+      DB.sqls.must_equal ["SELECT attributes.* FROM attributes INNER JOIN attributes_nodes ON (attributes_nodes.attribute_id = attributes.id) WHERE (attributes_nodes.node_id = 1234) LIMIT 1"]
+    end
   end
 
   it "should not add associations methods directly to class" do

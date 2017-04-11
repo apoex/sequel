@@ -616,6 +616,10 @@ describe "Dataset UNION, EXCEPT, and INTERSECT" do
     DB.drop_table?(:i1, :i2, :i3)
   end
   
+  it "should give the correct results for UNION with an existing order" do
+    @ds1.order(:number).union(@ds2).order(:number).map{|x| x[:number].to_s}.must_equal %w'10 20 30'
+  end
+
   it "should give the correct results for simple UNION, EXCEPT, and INTERSECT" do
     @ds1.union(@ds2).order(:number).map{|x| x[:number].to_s}.must_equal %w'10 20 30'
     if @ds1.supports_intersect_except?
@@ -624,7 +628,10 @@ describe "Dataset UNION, EXCEPT, and INTERSECT" do
     end
   end
   
-  cspecify "should give the correct results for UNION, EXCEPT, and INTERSECT when used with ordering and limits", :mssql do
+  it "should give the correct results for UNION, EXCEPT, and INTERSECT when used with ordering and limits and offsets" do
+    [%w'10 30', %w'10 20 30'].must_include @ds1.limit(1).union(@ds2).order(:number).map{|x| x[:number].to_s}
+    [%w'10 30', %w'10 20 30'].must_include @ds1.offset(1).union(@ds2).order(:number).map{|x| x[:number].to_s}
+
     @ds1.insert(:number=>8)
     @ds2.insert(:number=>9)
     @ds1.insert(:number=>38)
@@ -635,15 +642,31 @@ describe "Dataset UNION, EXCEPT, and INTERSECT" do
 
     @ds1.reverse_order(:number).limit(1).union(@ds2).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10 30 38 39'
     @ds2.reverse_order(:number).limit(1).union(@ds1).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 10 20 38 39'
+    @ds1.reverse_order(:number).limit(1, 1).union(@ds2).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10 20 30 39'
+    @ds2.reverse_order(:number).limit(1, 1).union(@ds1).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 10 20 30 38'
+    @ds1.reverse_order(:number).offset(1).union(@ds2).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 9 10 20 30 39'
+    @ds2.reverse_order(:number).offset(1).union(@ds1).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 9 10 20 30 38'
 
     @ds1.union(@ds2.order(:number).limit(1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 9 10 20 38'
     @ds2.union(@ds1.order(:number).limit(1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 9 10 30 39'
+    @ds1.union(@ds2.order(:number).limit(1, 1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 10 20 38'
+    @ds2.union(@ds1.order(:number).limit(1, 1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10 30 39'
+    @ds1.union(@ds2.order(:number).offset(1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 10 20 30 38 39'
+    @ds2.union(@ds1.order(:number).offset(1)).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10 20 30 38 39'
 
     @ds1.union(@ds2).limit(2).order(:number).map{|x| x[:number].to_s}.must_equal %w'8 9'
     @ds2.union(@ds1).reverse_order(:number).limit(2).map{|x| x[:number].to_s}.must_equal %w'39 38'
+    @ds1.union(@ds2).limit(2, 1).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10'
+    @ds2.union(@ds1).reverse_order(:number).limit(2, 1).map{|x| x[:number].to_s}.must_equal %w'38 30'
+    @ds1.union(@ds2).offset(1).order(:number).map{|x| x[:number].to_s}.must_equal %w'9 10 20 30 38 39'
+    @ds2.union(@ds1).reverse_order(:number).offset(1).map{|x| x[:number].to_s}.must_equal %w'38 30 20 10 9 8'
 
     @ds1.reverse_order(:number).limit(2).union(@ds2.reverse_order(:number).limit(2)).order(:number).limit(3).map{|x| x[:number].to_s}.must_equal %w'20 30 38'
     @ds2.order(:number).limit(2).union(@ds1.order(:number).limit(2)).reverse_order(:number).limit(3).map{|x| x[:number].to_s}.must_equal %w'10 9 8'
+    @ds1.reverse_order(:number).limit(2, 1).union(@ds2.reverse_order(:number).limit(2, 1)).order(:number).limit(3, 1).map{|x| x[:number].to_s}.must_equal %w'20 30'
+    @ds2.order(:number).limit(2, 1).union(@ds1.order(:number).limit(2, 1)).reverse_order(:number).limit(3, 1).map{|x| x[:number].to_s}.must_equal %w'20 10'
+    @ds1.reverse_order(:number).offset(1).union(@ds2.reverse_order(:number).offset(1)).order(:number).offset(1).map{|x| x[:number].to_s}.must_equal %w'9 10 20 30'
+    @ds2.order(:number).offset(1).union(@ds1.order(:number).offset(1)).reverse_order(:number).offset(1).map{|x| x[:number].to_s}.must_equal %w'38 30 20 10'
   end
 
   it "should give the correct results for compound UNION, EXCEPT, and INTERSECT" do
@@ -843,9 +866,9 @@ if DB.dataset.supports_window_functions?
     end
       
     it "should give correct results for ranking window functions with orders" do
-      @ds.select(:id){rank{}.over(:partition=>:group_id, :order=>:id).as(:rank)}.all.
+      @ds.select(:id){rank.function.over(:partition=>:group_id, :order=>:id).as(:rank)}.all.
         must_equal [{:rank=>1, :id=>1}, {:rank=>2, :id=>2}, {:rank=>3, :id=>3}, {:rank=>1, :id=>4}, {:rank=>2, :id=>5}, {:rank=>3, :id=>6}]
-      @ds.select(:id){rank{}.over(:order=>id).as(:rank)}.all.
+      @ds.select(:id){rank.function.over(:order=>id).as(:rank)}.all.
         must_equal [{:rank=>1, :id=>1}, {:rank=>2, :id=>2}, {:rank=>3, :id=>3}, {:rank=>4, :id=>4}, {:rank=>5, :id=>5}, {:rank=>6, :id=>6}]
     end
       
@@ -1511,7 +1534,7 @@ describe "Sequel::Dataset DSL support" do
     @ds.insert(20, 10)
     @ds.filter(:a=>20, :b=>10).all.must_equal [{:a=>20, :b=>10}]
     @ds.filter([[:a, 20], [:b, 10]]).all.must_equal [{:a=>20, :b=>10}]
-    @ds.filter({:a=>20}, {:b=>10}).all.must_equal [{:a=>20, :b=>10}]
+    @ds.filter(Sequel.&({:a=>20}, {:b=>10})).all.must_equal [{:a=>20, :b=>10}]
     @ds.filter(Sequel.|({:a=>20}, {:b=>5})).all.must_equal [{:a=>20, :b=>10}]
     @ds.filter(Sequel.~(:a=>10)).all.must_equal [{:a=>20, :b=>10}]
   end

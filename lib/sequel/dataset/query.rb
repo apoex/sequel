@@ -413,7 +413,7 @@ module Sequel
     #   DB[:items].group(:sum).having(:sum=>10)
     #   # SELECT * FROM items GROUP BY sum HAVING (sum = 10)
     def having(*cond, &block)
-      _filter(:having, *cond, &block)
+      _filter_or_exclude(false, :having, *cond, &block)
     end
     
     # Adds an INTERSECT clause using a second dataset object.
@@ -581,8 +581,8 @@ module Sequel
             when false
               nil # Do no qualification
             when :deep
-              k = Sequel::Qualifier.new(self, table_name).transform(k)
-              v = Sequel::Qualifier.new(self, last_alias).transform(v)
+              k = Sequel::Qualifier.new(table_name).transform(k)
+              v = Sequel::Qualifier.new(last_alias).transform(v)
             else
               k = qualified_column_name(k, table_name) if k.is_a?(Symbol)
               v = qualified_column_name(v, last_alias) if v.is_a?(Symbol)
@@ -897,6 +897,13 @@ module Sequel
       end
     end
 
+    # Specify that the check for limits/offsets when updating/deleting be skipped for the dataset.
+    def skip_limit_check
+      cached_dataset(:_skip_limit_check_ds) do
+        clone(:skip_limit_check=>true)
+      end
+    end
+
     # Skip locked rows when returning results from this dataset.
     def skip_locked
       cached_dataset(:_skip_locked_ds) do
@@ -916,6 +923,7 @@ module Sequel
     #   bv #  {:a => 1}
     #   ds.call(:select, bv)
     def unbind
+      Sequel::Deprecation.deprecate("Dataset#unbind", "Switch to using placeholders manually instead of unbinding them")
       u = Unbinder.new
       ds = clone(:where=>u.transform(opts[:where]), :join=>u.transform(opts[:join]))
       [ds, u.binds]
@@ -1022,7 +1030,7 @@ module Sequel
     #
     # See the {"Dataset Filtering" guide}[rdoc-ref:doc/dataset_filtering.rdoc] for more examples and details.
     def where(*cond, &block)
-      _filter(:where, *cond, &block)
+      _filter_or_exclude(false, :where, *cond, &block)
     end
     
     # Add a common table expression (CTE) with the given name and a dataset that defines the CTE.
@@ -1163,14 +1171,21 @@ module Sequel
       !(@opts.collect{|k,v| k unless v.nil?}.compact & opts).empty?
     end
 
+    # From types allowed to be considered a simple_select_all
+    SIMPLE_SELECT_ALL_ALLOWED_FROM = [Symbol, SQL::Identifier, SQL::QualifiedIdentifier].freeze
+
     # Whether this dataset is a simple select from an underlying table, such as:
     #
     #   SELECT * FROM table
     #   SELECT table.* FROM table
     def simple_select_all?
+      return false unless (f = @opts[:from]) && f.length == 1
       non_sql = non_sql_options
       o = @opts.reject{|k,v| v.nil? || non_sql.include?(k)}
-      if (f = o[:from]) && f.length == 1 && (f.first.is_a?(Symbol) || f.first.is_a?(SQL::AliasedExpression))
+      from = f.first
+      from = from.expression if from.is_a?(SQL::AliasedExpression)
+
+      if SIMPLE_SELECT_ALL_ALLOWED_FROM.any?{|x| from.is_a?(x)}
         case o.length
         when 1
           true
@@ -1186,6 +1201,19 @@ module Sequel
 
     private
 
+    # Load the extensions into the receiver, without checking if the receiver is frozen.
+    def _extension!(exts)
+      Sequel.extension(*exts)
+      exts.each do |ext|
+        if pr = Sequel.synchronize{EXTENSIONS[ext]}
+          pr.call(self)
+        else
+          raise(Error, "Extension #{ext} does not have specific support handling individual datasets (try: Sequel.extension #{ext.inspect})")
+        end
+      end
+      self
+    end
+
     # Internal filtering method so it works on either the WHERE or HAVING clauses, with or
     # without inversion.
     def _filter_or_exclude(invert, clause, *cond, &block)
@@ -1200,9 +1228,11 @@ module Sequel
       end
     end
 
-    # Internal filter method so it works on either the having or where clauses.
     def _filter(clause, *cond, &block)
+      # :nocov:
+      Sequel::Deprecation.deprecate("Sequel::Dataset#_filter (private method)", "Switch to calling Sequel::Dataset#where/having directly")
       _filter_or_exclude(false, clause, *cond, &block)
+      # :nocov:
     end
 
     # The default :qualify option to use for join tables if one is not specified.
@@ -1214,10 +1244,12 @@ module Sequel
     def filter_expr(expr = nil, &block)
       expr = nil if expr == []
 
-      if expr && block
-        return SQL::BooleanExpression.new(:AND, filter_expr(expr), filter_expr(block))
-      elsif block
-        expr = block
+      if block
+        if expr
+          return SQL::BooleanExpression.new(:AND, filter_expr(expr), filter_expr(Sequel.virtual_row(&block)))
+        else
+          return filter_expr(Sequel.virtual_row(&block))
+        end
       end
 
       case expr
@@ -1229,11 +1261,13 @@ module Sequel
         elsif Sequel.condition_specifier?(expr)
           SQL::BooleanExpression.from_value_pairs(expr)
         else
+          Sequel::Deprecation.deprecate("Passing multiple arguments as filter arguments when not using a conditions specifier (#{expr.inspect})", "Pass the arguments to separate filter methods or use Sequel.& to combine them")
           SQL::BooleanExpression.new(:AND, *expr.map{|x| filter_expr(x)})
         end
       when Proc
+        Sequel::Deprecation.deprecate("Passing Proc objects as filter arguments", "Pass them as blocks to the filtering methods or to Sequel.expr")
         filter_expr(Sequel.virtual_row(&expr))
-      when Numeric, SQL::NumericExpression, SQL::StringExpression
+      when Numeric, SQL::NumericExpression, SQL::StringExpression #, Proc # SEQUEL5
         raise(Error, "Invalid filter expression: #{expr.inspect}") 
       when TrueClass, FalseClass
         if supports_where_true?

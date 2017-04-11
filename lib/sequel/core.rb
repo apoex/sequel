@@ -24,9 +24,7 @@
 module Sequel
   @convert_two_digit_years = true
   @datetime_class = Time
-  @split_symbols = true
-
-  # Whether Sequel is being run in single threaded mode
+  @split_symbols = :deprecated
   @single_threaded = false
 
   class << self
@@ -51,6 +49,15 @@ module Sequel
     # they often implement them differently (e.g. + using seconds on +Time+ and
     # days on +DateTime+).
     attr_accessor :datetime_class
+
+    # Set whether sequel is being used in single threaded mode. by default,
+    # Sequel uses a thread-safe connection pool, which isn't as fast as the
+    # single threaded connection pool, and also has some additional thread
+    # safety checks.  If your program will only have one thread,
+    # and speed is a priority, you should set this to true:
+    #
+    #   Sequel.single_threaded = true
+    attr_accessor :single_threaded
   end
 
   # Returns true if the passed object could be a specifier of conditions, false otherwise.
@@ -134,8 +141,8 @@ module Sequel
   # it just loads a module that you can extend other classes with.  Consult the documentation
   # for each extension you plan on using for usage.
   #
-  #   Sequel.extension(:schema_dumper)
-  #   Sequel.extension(:pagination, :query)
+  #   Sequel.extension(:blank)
+  #   Sequel.extension(:core_extensions, :named_timezones)
   def self.extension(*extensions)
     extensions.each{|e| Kernel.require "sequel/extensions/#{e}"}
   end
@@ -152,6 +159,7 @@ module Sequel
   #
   # Other String instance methods work as well.
   def self.identifier_input_method=(value)
+    # SEQUEL5: Remove
     Database.identifier_input_method = value
   end
 
@@ -168,6 +176,7 @@ module Sequel
   #
   # Other String instance methods work as well.
   def self.identifier_output_method=(value)
+    # SEQUEL5: Remove
     Database.identifier_output_method = value
   end
 
@@ -194,6 +203,7 @@ module Sequel
   #
   #   Sequel.quote_identifiers = false
   def self.quote_identifiers=(value)
+    # SEQUEL5: Remove
     Database.quote_identifiers = value
   end
 
@@ -218,18 +228,6 @@ module Sequel
     Array(files).each{|f| super("#{File.dirname(__FILE__).untaint}/#{"#{subdir}/" if subdir}#{f}")}
   end
 
-  # Set whether Sequel is being used in single threaded mode. By default,
-  # Sequel uses a thread-safe connection pool, which isn't as fast as the
-  # single threaded connection pool, and also has some additional thread
-  # safety checks.  If your program will only have one thread,
-  # and speed is a priority, you should set this to true:
-  #
-  #   Sequel.single_threaded = true
-  def self.single_threaded=(value)
-    @single_threaded = value
-    Database.single_threaded = value
-  end
-
   COLUMN_REF_RE1 = /\A((?:(?!__).)+)__((?:(?!___).)+)___(.+)\z/.freeze
   COLUMN_REF_RE2 = /\A((?:(?!___).)+)___(.+)\z/.freeze
   COLUMN_REF_RE3 = /\A((?:(?!__).)+)__(.+)\z/.freeze
@@ -244,13 +242,22 @@ module Sequel
   # For tables, these parts are the schema, table, and alias.
   def self.split_symbol(sym)
     unless v = Sequel.synchronize{SPLIT_SYMBOL_CACHE[sym]}
-      if split_symbols?
+      if split = split_symbols?
         v = case s = sym.to_s
         when COLUMN_REF_RE1
+          if split == :deprecated
+            Sequel::Deprecation.deprecate("Symbol splitting", "Either set Sequel.split_symbols = true, or change #{sym.inspect} to Sequel.qualify(#{$1.inspect}, #{$2.inspect}).as(#{$3.inspect})")
+          end
           [$1.freeze, $2.freeze, $3.freeze].freeze
         when COLUMN_REF_RE2
+          if split == :deprecated
+            Sequel::Deprecation.deprecate("Symbol splitting", "Either set Sequel.split_symbols = true, or change #{sym.inspect} to Sequel.identifier(#{$1.inspect}).as(#{$2.inspect})")
+          end
           [nil, $1.freeze, $2.freeze].freeze
         when COLUMN_REF_RE3
+          if split == :deprecated
+            Sequel::Deprecation.deprecate("Symbol splitting", "Either set Sequel.split_symbols = true, or change #{sym.inspect} to Sequel.qualify(#{$1.inspect}, #{$2.inspect})")
+          end
           [$1.freeze, $2.freeze, nil].freeze
         else
           [nil, s.freeze, nil].freeze
@@ -358,14 +365,13 @@ module Sequel
 
   # Uses a transaction on all given databases with the given options. This:
   #
-  #   Sequel.transaction([DB1, DB2, DB3]){...}
+  #   Sequel.transaction([DB1, DB2, DB3]){}
   #
   # is equivalent to:
   #
   #   DB1.transaction do
   #     DB2.transaction do
   #       DB3.transaction do
-  #         ...
   #       end
   #     end
   #   end

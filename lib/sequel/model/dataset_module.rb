@@ -14,24 +14,18 @@ module Sequel
         @model = model
       end
 
-      # Define a named filter for this dataset, see
-      # Model.subset for details.
+      # Alias for where.
       def subset(name, *args, &block)
-        @model.subset(name, *args, &block)
+        where(name, *args, &block)
       end
 
-      # Alias for subset
-      def where(name, *args, &block)
-        subset(name, *args, &block)
-      end
-
-      %w'exclude exclude_having having'.map(&:to_sym).each do |meth|
+      %w'where exclude exclude_having having'.map(&:to_sym).each do |meth|
         define_method(meth) do |name, *args, &block|
           if block || args.flatten.any?{|arg| arg.is_a?(Proc)}
-            @model.def_dataset_method(name){send(meth, *args, &block)}
+            define_method(name){send(meth, *args, &block)}
           else
             key = :"_#{meth}_#{name}_ds"
-            @model.def_dataset_method(name) do
+            define_method(name) do
               cached_dataset(key){send(meth, *args)}
             end
           end
@@ -39,22 +33,27 @@ module Sequel
       end
 
       meths = (<<-METHS).split.map(&:to_sym)
-        distinct eager grep group group_and_count group_append 
+        distinct grep group group_and_count group_append 
         limit offset order order_append order_prepend 
         select select_all select_append select_group server
       METHS
 
-      meths.each do |meth|
-        define_method(meth) do |name, *args, &block|
+      # Define a method in the module
+      def self.def_dataset_caching_method(mod, meth)
+        mod.send(:define_method, meth) do |name, *args, &block|
           if block
-            @model.def_dataset_method(name){send(meth, *args, &block)}
+            define_method(name){send(meth, *args, &block)}
           else
             key = :"_#{meth}_#{name}_ds"
-            @model.def_dataset_method(name) do
+            define_method(name) do
               cached_dataset(key){send(meth, *args)}
             end
           end
         end
+      end
+
+      meths.each do |meth|
+        def_dataset_caching_method(self, meth)
       end
 
       private
@@ -62,8 +61,11 @@ module Sequel
       # Add a class method to the related model that
       # calls the dataset method of the same name.
       def method_added(meth)
-        @model.send(:def_model_dataset_method, meth)
+        @model.send(:def_model_dataset_method, meth) if public_method_defined?(meth)
+        super
       end
     end
+
+    @dataset_module_class = DatasetModule
   end
 end

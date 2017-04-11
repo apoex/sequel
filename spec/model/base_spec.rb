@@ -123,19 +123,19 @@ describe Sequel::Model, ".def_dataset_method" do
     @c = Class.new(Sequel::Model(:items))
   end
   
-  it "should add a method to the dataset and model if called with a block argument" do
+  deprecated "should add a method to the dataset and model if called with a block argument" do
     @c.def_dataset_method(:return_3){3}
     @c.return_3.must_equal 3
     @c.dataset.return_3.must_equal 3
   end
 
-  it "should handle weird method names" do
+  deprecated "should handle weird method names" do
     @c.def_dataset_method(:"return 3"){3}
     @c.send(:"return 3").must_equal 3
     @c.dataset.send(:"return 3").must_equal 3
   end
 
-  it "should not add a model method if the model already responds to the method" do
+  deprecated "should not add a model method if the model already responds to the method" do
     @c.instance_eval do
       def foo
         1
@@ -156,7 +156,7 @@ describe Sequel::Model, ".def_dataset_method" do
     @c.dataset.bar.must_equal 4
   end
 
-  it "should add all passed methods to the model if called without a block argument" do
+  deprecated "should add all passed methods to the model if called without a block argument" do
     @c.def_dataset_method(:return_3, :return_4)
     proc{@c.return_3}.must_raise(NoMethodError)
     proc{@c.return_4}.must_raise(NoMethodError)
@@ -168,14 +168,14 @@ describe Sequel::Model, ".def_dataset_method" do
     @c.return_4.must_equal 4
   end
 
-  it "should cache calls and readd methods if set_dataset is used" do
+  deprecated "should cache calls and readd methods if set_dataset is used" do
     @c.def_dataset_method(:return_3){3}
     @c.set_dataset :items
     @c.return_3.must_equal 3
     @c.dataset.return_3.must_equal 3
   end
 
-  it "should readd methods to subclasses, if set_dataset is used in a subclass" do
+  deprecated "should readd methods to subclasses, if set_dataset is used in a subclass" do
     @c.def_dataset_method(:return_3){3}
     c = Class.new(@c)
     c.set_dataset :items
@@ -207,6 +207,13 @@ describe Sequel::Model, ".dataset_module" do
   it "should add methods defined in the module outside the block to the class" do
     @c.dataset_module.module_eval{def return_3() 3 end}
     @c.return_3.must_equal 3
+  end
+
+  it "should not add private or protected methods defined in the module to the class" do
+    @c.dataset_module{private; def return_3() 3 end}
+    @c.dataset_module{protected; def return_4() 4 end}
+    @c.respond_to?(:return_3).must_equal false
+    @c.respond_to?(:return_4).must_equal false
   end
 
   it "should cache calls and readd methods if set_dataset is used" do
@@ -283,6 +290,12 @@ describe Sequel::Model, ".dataset_module" do
     @c.dataset_module{where :released, :released}
     @c.released.sql.must_equal 'SELECT * FROM items WHERE released'
     @c.where(:foo).released.sql.must_equal 'SELECT * FROM items WHERE (foo AND released)'
+  end
+
+  if Sequel::Model.dataset_module_class == Sequel::Model::DatasetModule
+    it "should have dataset_module not support an eager method" do
+      proc{@c.dataset_module{eager :foo}}.must_raise NoMethodError
+    end
   end
 
   it "should have dataset_module support a having method" do
@@ -556,25 +569,26 @@ describe "Model.db=" do
     @m = Class.new(Sequel::Model(@db1[:blue].filter(:x=>1)))
   end
   
-  it "should affect the underlying dataset" do
+  deprecated "should affect the underlying dataset" do
     @m.db = @db2
     
     @m.dataset.db.must_equal @db2
     @m.dataset.db.wont_equal @db1
   end
 
-  it "should keep the same dataset options" do
+  deprecated "should keep the same dataset options" do
     @m.db = @db2
     @m.dataset.sql.must_equal 'SELECT * FROM blue WHERE (x = 1)'
   end
 
   it "should use the database for subclasses" do
+    @m = Class.new(Sequel::Model)
     @m.db = @db2
     Class.new(@m).db.must_equal @db2
   end
 end
 
-describe Sequel::Model, ".(allowed|restricted)_columns " do
+describe Sequel::Model, ".allowed_columns " do
   before do
     @c = Class.new(Sequel::Model(:blahblah)) do
       columns :x, :y, :z
@@ -584,7 +598,7 @@ describe Sequel::Model, ".(allowed|restricted)_columns " do
     DB.reset
   end
   
-  it "should set the allowed columns correctly" do
+  deprecated "should set the allowed columns correctly" do
     @c.allowed_columns.must_be_nil
     @c.set_allowed_columns :x
     @c.allowed_columns.must_equal [:x]
@@ -592,7 +606,7 @@ describe Sequel::Model, ".(allowed|restricted)_columns " do
     @c.allowed_columns.must_equal [:x, :y]
   end
 
-  it "should only set allowed columns by default" do
+  deprecated "should only set allowed columns by default" do
     @c.set_allowed_columns :x, :y
     i = @c.new(:x => 1, :y => 2, :z => 3)
     i.values.must_equal(:x => 1, :y => 2)
@@ -649,7 +663,6 @@ describe Sequel::Model, ".strict_param_setting" do
   before do
     @c = Class.new(Sequel::Model(:blahblah)) do
       columns :x, :y, :z, :id
-      set_allowed_columns :x, :y
     end
   end
   
@@ -658,21 +671,24 @@ describe Sequel::Model, ".strict_param_setting" do
   end
 
   it "should raise an error if a missing/restricted column/method is accessed" do
-    proc{@c.new(:z=>1)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{@c.create(:z=>1)}.must_raise(Sequel::MassAssignmentRestriction)
+    proc{@c.new(:a=>1)}.must_raise(Sequel::MassAssignmentRestriction)
+    proc{@c.create(:a=>1)}.must_raise(Sequel::MassAssignmentRestriction)
     c = @c.new
-    proc{c.set(:z=>1)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{c.set_all(:use_after_commit_rollback => false)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{c.set_only({:x=>1}, :y)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{c.update(:z=>1)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{c.update_all(:use_after_commit_rollback=>false)}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{c.update_only({:x=>1}, :y)}.must_raise(Sequel::MassAssignmentRestriction)
+    proc{c.set(:a=>1)}.must_raise(Sequel::MassAssignmentRestriction)
+    proc{c.update(:a=>1)}.must_raise(Sequel::MassAssignmentRestriction)
+    deprecated do
+      @c.set_allowed_columns :x, :y
+      proc{c.set_all(:use_after_commit_rollback => false)}.must_raise(Sequel::MassAssignmentRestriction)
+      proc{c.set_only({:x=>1}, :y)}.must_raise(Sequel::MassAssignmentRestriction)
+      proc{c.update_all(:use_after_commit_rollback=>false)}.must_raise(Sequel::MassAssignmentRestriction)
+      proc{c.update_only({:x=>1}, :y)}.must_raise(Sequel::MassAssignmentRestriction)
+    end
   end
 
   it "should be disabled by strict_param_setting = false" do
     @c.strict_param_setting = false
     @c.strict_param_setting.must_equal false
-    @c.new(:z=>1)
+    @c.new(:a=>1)
   end
 end
 
@@ -731,8 +747,6 @@ describe Sequel::Model, ".[] optimization" do
     @c.simple_table.must_equal 'a'
     @c.set_dataset :b
     @c.simple_table.must_equal 'b'
-    @c.set_dataset :b__a
-    @c.simple_table.must_equal 'b.a'
   end
 
   it "should have simple_table set if passed a simple select all dataset to set_dataset" do
@@ -740,6 +754,13 @@ describe Sequel::Model, ".[] optimization" do
     @c.simple_table.must_equal '"a"'
     @c.set_dataset @ds.from(:b)
     @c.simple_table.must_equal '"b"'
+    @c.set_dataset @ds.from(Sequel[:b][:a])
+    @c.simple_table.must_equal '"b"."a"'
+  end
+
+  with_symbol_splitting "should have simple_table set using qualified symbol" do
+    @c.set_dataset :b__a
+    @c.simple_table.must_equal 'b.a'
     @c.set_dataset @ds.from(:b__a)
     @c.simple_table.must_equal '"b"."a"'
   end

@@ -15,8 +15,8 @@ unless Object.const_defined?('Sequel') && Sequel.const_defined?('Model')
   $:.unshift(File.join(File.dirname(File.expand_path(__FILE__)), "../../lib/"))
   require 'sequel'
 end
-Sequel::Deprecation.backtrace_filter = lambda{|line, lineno| lineno < 4 || line =~ /_spec\.rb/}
-SEQUEL_EXTENSIONS_NO_DEPRECATION_WARNING = true
+
+require "#{File.dirname(File.dirname(__FILE__))}/deprecation_helper.rb"
 
 begin
   # Attempt to load ActiveSupport blank extension and inflector first, so Sequel
@@ -35,9 +35,13 @@ def skip_warn(s)
   warn "Skipping test of #{s}" if ENV["SKIPPED_TEST_WARN"]
 end
 
+# SEQUEL5: Remove
+output = Sequel::Deprecation.output
+Sequel::Deprecation.output = nil
 Sequel.quote_identifiers = false
 Sequel.identifier_input_method = nil
 Sequel.identifier_output_method = nil
+Sequel::Deprecation.output = output
 
 class << Sequel::Model
   attr_writer :db_schema
@@ -54,7 +58,7 @@ class << Sequel::Model
 end
 
 Sequel::Model.use_transactions = false
-Sequel.cache_anonymous_models = false
+Sequel::Model.cache_anonymous_models = false
 
 db = Sequel.mock(:fetch=>{:id => 1, :x => 1}, :numrows=>1, :autoid=>proc{|sql| 10})
 def db.schema(*) [[:id, {:primary_key=>true}]] end

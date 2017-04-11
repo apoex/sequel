@@ -24,6 +24,7 @@ describe "Sequel::Model basic support" do
   
   it ".finder should create method that returns first matching item" do
     def Item.by_name(name) where(:name=>name) end
+    Item.plugin :finder
     Item.finder :by_name
     Item.first_by_name('J').must_be_nil
     Item.create(:name=>'J')
@@ -33,6 +34,7 @@ describe "Sequel::Model basic support" do
   
   it ".prepared_finder should create method that returns first matching item" do
     def Item.by_name(name) where(:name=>name) end
+    Item.plugin :finder
     Item.prepared_finder :by_name
     Item.first_by_name('J').must_be_nil
     Item.create(:name=>'J')
@@ -86,7 +88,7 @@ describe "Sequel::Model basic support" do
     i.save.must_be_nil
   end
 
-  it "#should respect after_commit, after_rollback, after_destroy_commit, and after_destroy_rollback hooks" do
+  deprecated "#should respect after_commit, after_rollback, after_destroy_commit, and after_destroy_rollback hooks" do
     i = Item.create(:name=>'J')
     i.use_transactions = true
     def i.hooks

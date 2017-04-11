@@ -1,3 +1,155 @@
+=== master
+
+* Include migration filename in message about migration file without a single migration (jmettraux) (#1334)
+
+* Deprecate conversion of - to _ in adapter schemes (jeremyevans)
+
+* Don't quote function names that are SQL::Identifiers, unless SQL::Function#quoted is used (jeremyevans)
+
+* Deprecate splitting virtual row method names (jeremyevans)
+
+* Deprecate passing blocks to virtual row methods, move to virtual_row_method_block extension (jeremyevans)
+
+* Deprecate Sequel::SQL::Expression#sql_literal and #lit (jeremyevans)
+
+* Don't issue deprecation warnings on ruby 1.8.7, as Sequel 5 is dropping support for it (jeremyevans)
+
+* Deprecate Sequel::BasicObject#remove_methods! (jeremyevans)
+
+* Deprecate sequel/no_core_ext file (jeremyevans)
+
+* Deprecate model dataset #insert_sql accepting model instances (jeremyevans)
+
+* Deprecate model dataset #join_table and #graph accepting model classes (jeremyevans)
+
+* Support :alias option to class_table_inheritance plugin, wrapping subclass datasets in a subquery to fix ambiguous column issues (jeremyevans)
+
+* Deprecate Model.set_allowed_columns and Model#{set_all,set_only,update_all,update_only}, move to whitelist security plugin (jeremyevans)
+
+* Do not raise MassAssignmentRestriction when setting nested attributes and using the :fields option, only check for fields given (jeremyevans)
+
+* Do not add class methods for private methods definined in dataset_module (jeremyevans)
+
+* Deprecate Model.def_dataset_method and Model.subset, move to def_dataset_method plugin (jeremyevans)
+
+* Deprecate Model.finder and Model.prepared_finder, move to finder plugin (jeremyevans)
+
+* Deprecate calling Model.db= on a model with a dataset (jeremyevans)
+
+* Deprecate splitting symbols to look for qualified/aliased identifiers (e.g. :table__column) (jeremyevans)
+
+* Allow optimized lookups and deletes for models using SQL::Identifier and SQL::QualifiedIdentifier values as the FROM table (jeremyevans)
+
+=== 4.45.0 (2017-04-01)
+
+* Correctly handle datasets with offsets but no limits used in compound datasets on MSSQL <2012 (jeremyevans)
+
+* Correctly handle false values in the split_values plugin (bananarne) (#1333)
+
+* Deprecate Dataset#dup/clone and Model.dup/clone (jeremyevans)
+
+* Deprecate the schema and scissors plugins (jeremyevans)
+
+* Deprecate Model.{lazy_attributes,nested_attributes,composition,serialization}_module accessors (jeremyevans)
+
+* Deprecate Database#database_name on MySQL (jeremyevans)
+
+* Deprecate Database#use on MySQL (jeremyevans)
+
+* Make pg_hstore extension no longer update PG_NAMED_TYPES (jeremyevans)
+
+* Deprecate Sequel::PG_NAMED_TYPES (jeremyevans)
+
+* Add columns_updated plugin for making updated columns hash available in after_update and after_save hooks (jeremyevans)
+
+* Deprecate accessing @columns_updated directly in model after_update and after_save hooks (jeremyevans)
+
+* Deprecate Database#{add,remove}_servers when not using a sharded connection pool (jeremyevans)
+
+* Deprecate Database#each_server (jeremyevans)
+
+* Make Model#_valid? private method accept only an options hash (jeremyevans)
+
+* Deprecate returning false from model before hooks to cancel the action, use Model#cancel_action (jeremyevans)
+
+* Handle Model#cancel_action correctly in before hooks when Model#valid? is called (jeremyevans)
+
+* Deprecate Sequel::BeforeHookFailed (jeremyevans)
+
+* Deprecate passing multiple arguments as filter arguments when not using a conditions specifier (jeremyevans)
+
+* Deprecate passing Procs as filter arguments, require they be passed as blocks (jeremyevans)
+
+* Deprecate Sequel::Error::* exception class aliases (jeremyevans)
+
+* Deprecate prepared_statements_associations and prepared_statements_with_pk plugins (jeremyevans)
+
+* Deprecate Sequel::Unbinder, Sequel::UnbindDuplicate, and Dataset#unbind (jeremyevans)
+
+* Deprecating calling Sequel::Qualifier with two arguments (jeremyevans)
+
+* Add validation_contexts plugin for supporting custom contexts when validating (jeremyevans)
+
+* Deprecate Sequel::Database.single_threaded singleton accessor (jeremyevans)
+
+* Deprecate treating unrecognized prepared statement type as :select (jeremyevans)
+
+* Deprecate Sequel.identifier_{in,out}put_method= and .quote_identifiers= singleton setters (jeremyevans)
+
+* Deprecate Sequel::Database.identifier_{in,out}put_method and .quote_identifiers singleton accessors (jeremyevans)
+
+* Deprecate loading the identifier_mangling by default, require it be loaded explicitly if needed (jeremyevans)
+
+* Make Database#dump_{table_schema,schema_migration} in schema_dumper extension support :schema option (dadario) (#1328)
+
+* Make Dataset#delete respect an existing limit on Microsoft SQL Server (jeremyevans)
+
+* Add Dataset#skip_limit_check to mark a dataset as skipping the limit/offset check for updates and deletes (jeremyevans)
+
+* Deprecate calling Dataset#{update/delete/truncate} on datasets with limits or offsets unless the database supports it (jeremyevans)
+
+* Add deprecation message for using association_pks setter method with :delay_pks=>true association option (jeremyevans)
+
+* Add deprecation message for using association_pks setter method without :delay_pks association option (jeremyevans)
+
+* Deprecate having duplicate column names in subclass tables when using the class_table_inheritance plugin (jeremyevans)
+
+* Deprecate do (DataObjects), swift, and jdbc/as400 adapters (jeremyevans)
+
+* Deprecate support for Cubrid, Firebird, Informix, and Progress databases (jeremyevans)
+
+* The :proxy_argument option passed to association_proxies plugin block is now an empty hash if no arguments are passed to the association method (jeremyevans)
+
+* Deprecate passing non-hash arguments to association methods (jeremyevans)
+
+* Deprecate passing multiple arguments to association methods (jeremyevans)
+
+* Deprecate model transaction hook methods (jeremyevans)
+
+* Drop support for pg <0.8.0 in the postgres adapter (jeremyevans)
+
+* Deprecate passing a block to Database#from (jeremyevans)
+
+* Deprecate Sequel::Model::ANONYMOUS_MODEL_CLASSES{,_MUTEX} (jeremyevans)
+
+* Deprecate Sequel.cache_anonymous_models and Sequel.cache_anonymous_models= (jeremyevans)
+
+* Automatically use from_self when using a dataset as part of a compound if it has an offset but no limit (jeremyevans)
+
+* Drop order on existing datasets when using Dataset#union/intersect/except on Microsoft SQL Server unless a limit or offset is used (jeremyevans)
+
+* Deprecate dataset mutation (jeremyevans)
+
+* Handle dumping of autoincrementing 64-bit integer primary key columns correctly when using :same_db option in the schema dumper (jeremyevans) (#1324)
+
+* Add Model.dataset_module_class accessor, allowing plugins to support custom behavior in dataset_module blocks (jeremyevans)
+
+* Make ORDER BY come after UNION/INTERSECT/EXCEPT on Microsoft SQL Server and SQLAnywhere (jeremyevans)
+
+* Make Database#indexes on MySQL handle qualified identifiers (jeremyevans) (#1316)
+
+* Add oracle support to the odbc adapter (samuel02) (#1315)
+
 === 4.44.0 (2017-03-01)
 
 * Add where_all, where_each, where_single_value model dataset methods, optimized for frozen datasets (jeremyevans)

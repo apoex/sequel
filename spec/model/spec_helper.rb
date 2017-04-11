@@ -11,9 +11,15 @@ gem 'minitest'
 require 'minitest/autorun'
 require 'minitest/hooks/default'
 
+require "#{File.dirname(File.dirname(__FILE__))}/deprecation_helper.rb"
+
+# SEQUEL5: Remove
+output = Sequel::Deprecation.output
+Sequel::Deprecation.output = nil
 Sequel.quote_identifiers = false
 Sequel.identifier_input_method = nil
 Sequel.identifier_output_method = nil
+Sequel::Deprecation.output = output
 
 class << Sequel::Model
   attr_writer :db_schema
@@ -30,7 +36,7 @@ class << Sequel::Model
 end
 
 Sequel::Model.use_transactions = false
-Sequel.cache_anonymous_models = false
+Sequel::Model.cache_anonymous_models = false
 
 db = Sequel.mock(:fetch=>{:id => 1, :x => 1}, :numrows=>1, :autoid=>proc{|sql| 10})
 def db.schema(*) [[:id, {:primary_key=>true}]] end

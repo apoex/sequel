@@ -15,7 +15,13 @@ module Sequel
           @autoreloading_associations = {}
           @cache_associations = true
           @default_association_options = {}
+          @dataset_module_class = DatasetModule
         end
+      end
+
+      # The dataset module to use for classes using the associations plugin.
+      class DatasetModule < Model::DatasetModule
+        def_dataset_caching_method(self, :eager)
       end
 
       # AssociationReflection is a Hash subclass that keeps information on Sequel::Model associations. It
@@ -83,7 +89,7 @@ module Sequel
           end
           ds = ds.order(*self[:order]) if self[:order]
           ds = ds.limit(*self[:limit]) if self[:limit]
-          ds = ds.limit(1) if limit_to_single_row?
+          ds = ds.limit(1).skip_limit_check if limit_to_single_row?
           ds = ds.eager(self[:eager]) if self[:eager]
           ds = ds.distinct if self[:distinct]
           ds
@@ -135,7 +141,7 @@ module Sequel
         def apply_window_function_eager_limit_strategy(ds, limit_and_offset=limit_and_offset())
           rn = ds.row_number_column 
           limit, offset = limit_and_offset
-          ds = ds.unordered.select_append{|o| o.row_number{}.over(:partition=>predicate_key, :order=>ds.opts[:order]).as(rn)}.from_self
+          ds = ds.unordered.select_append{|o| o.row_number.function.over(:partition=>predicate_key, :order=>ds.opts[:order]).as(rn)}.from_self
           ds = if !returns_array?
             ds.where(rn => offset ? offset+1 : 1)
           elsif offset
@@ -426,7 +432,7 @@ module Sequel
           if use_placeholder_loader?
             cached_fetch(:placeholder_loader) do
               Sequel::Dataset::PlaceholderLiteralizer.loader(associated_dataset) do |pl, ds|
-                ds.where(*predicate_keys.map{|k| SQL::BooleanExpression.new(:'=', k, pl.arg)})
+                ds.where(Sequel.&(*predicate_keys.map{|k| SQL::BooleanExpression.new(:'=', k, pl.arg)}))
               end
             end
           end
@@ -451,7 +457,7 @@ module Sequel
             when Symbol, SQL::Identifier
               SQL::QualifiedIdentifier.new(table, k)
             else
-              Sequel::Qualifier.new(self[:model].dataset, table).transform(k)
+              Sequel::Qualifier.new(table).transform(k)
             end
           end
         end
@@ -688,14 +694,12 @@ module Sequel
           v = fetch(:filter_limit_strategy, self[:eager_limit_strategy])
           if v || self[:limit] || !returns_array?
             case v ||= self[:model].default_eager_limit_strategy
-            when :union, :ruby
+            when true, :union, :ruby
               # Can't use a union or ruby-based strategy for filtering by associations, switch to default eager graph limit
               # strategy.
               true_eager_graph_limit_strategy
             when Symbol
               v
-            when true
-              true_eager_graph_limit_strategy
             end
           end
         end
@@ -1891,7 +1895,10 @@ module Sequel
 
         # Adds the association method to the association methods module.
         def def_association_method(opts)
-          association_module_def(opts.association_method, opts){|*dynamic_opts, &block| load_associated_objects(opts, dynamic_opts[0], &block)}
+          association_module_def(opts.association_method, opts) do |*dynamic_opts, &block|
+            Sequel::Deprecation.deprecate("Passing multiple arguments to ##{opts.association_method}", "Additional arguments are currently ignored.") if dynamic_opts.length > 1
+            load_associated_objects(opts, dynamic_opts.length == 0 ? OPTS : dynamic_opts[0], &block)
+          end
         end
       
         # Define all of the association instance methods for this association.
@@ -2159,7 +2166,7 @@ module Sequel
                 cks.zip(cpks).each{|k, pk| o.set_column_value(:"#{k}=", get_column_value(pk))}
               end
               checked_transaction do
-                up_ds.update(ck_nil_hash)
+                up_ds.skip_limit_check.update(ck_nil_hash)
                 o.save(save_opts) || raise(Sequel::Error, "invalid associated object, cannot save") if o
               end
             end
@@ -2384,13 +2391,16 @@ module Sequel
         def load_association_objects_options(dynamic_opts, &block)
           dynamic_opts = case dynamic_opts
           when true, false, nil
+            Sequel::Deprecation.deprecate("Passing #{dynamic_opts.inspect} an argument to an association loading method", "Pass {:reload=>#{dynamic_opts.inspect}} instead")
             {:reload=>dynamic_opts}
           when Hash
             Hash[dynamic_opts]
           else
             if dynamic_opts.respond_to?(:call)
+              Sequel::Deprecation.deprecate("Passing callbable argument #{dynamic_opts.inspect} to an association loading method", "Pass a block to the method to use a callback")
               {:callback=>dynamic_opts}
             else
+              Sequel::Deprecation.deprecate("Passing #{dynamic_opts.inspect} an argument to an association loading method", "Pass {:reload=>true} if you would like to reload the association")
               {:reload=>true}
             end
           end

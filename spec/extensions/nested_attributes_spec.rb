@@ -49,6 +49,12 @@ describe "NestedAttributes plugin" do
     @db.sqls
   end
   
+  deprecated "should allow access to nested_attributes_module" do
+    @Artist.nested_attributes_module.must_be_kind_of Module
+    @Artist.nested_attributes_module = v = Module.new
+    @Artist.nested_attributes_module.must_equal v
+  end
+
   it "should support creating new many_to_one objects" do
     a = @Album.new({:name=>'Al', :artist_attributes=>{:name=>'Ar'}})
     @db.sqls.must_equal []
@@ -646,8 +652,12 @@ describe "NestedAttributes plugin" do
       "UPDATE tags SET name = 'T2' WHERE (id = 30)",
       "INSERT INTO tags (name) VALUES ('T3')",
       ["INSERT INTO at (album_id, tag_id) VALUES (10, 1)", "INSERT INTO at (tag_id, album_id) VALUES (1, 10)"])
-    proc{al.set(:tags_attributes=>[{:id=>30, :name=>'T2', :number=>3}])}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{al.set(:tags_attributes=>[{:name=>'T2', :number=>3}])}.must_raise(Sequel::MassAssignmentRestriction)
+    al.set(:tags_attributes=>[{:id=>30, :name=>'T3', :number=>3}])
+    al.tags.first.name.must_equal 'T3'
+    al.tags.first.number.must_equal 10
+    al.set(:tags_attributes=>[{:name=>'T4', :number=>3}])
+    al.tags.last.name.must_equal 'T4'
+    al.tags.last.number.must_be_nil
   end
 
   it "should accept a proc for the :fields option that accepts the associated object and returns an array of fields" do
@@ -664,8 +674,12 @@ describe "NestedAttributes plugin" do
       "UPDATE tags SET name = 'T2' WHERE (id = 30)",
       "INSERT INTO tags (name) VALUES ('T3')",
       ["INSERT INTO at (album_id, tag_id) VALUES (10, 1)", "INSERT INTO at (tag_id, album_id) VALUES (1, 10)"])
-    proc{al.set(:tags_attributes=>[{:id=>30, :name=>'T2', :number=>3}])}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{al.set(:tags_attributes=>[{:name=>'T2', :number=>3}])}.must_raise(Sequel::MassAssignmentRestriction)
+    al.set_nested_attributes(:tags, [{:id=>30, :name=>'T3', :number=>3}], :fields=>[:name])
+    al.tags.first.name.must_equal 'T3'
+    al.tags.first.number.must_equal 10
+    al.set_nested_attributes(:tags, [{:name=>'T4', :number=>3}], :fields=>[:name])
+    al.tags.last.name.must_equal 'T4'
+    al.tags.last.number.must_be_nil
   end
 
   it "should allow per-call options via the set_nested_attributes method" do
@@ -682,8 +696,12 @@ describe "NestedAttributes plugin" do
       "UPDATE tags SET name = 'T2' WHERE (id = 30)",
       "INSERT INTO tags (name) VALUES ('T3')",
       ["INSERT INTO at (album_id, tag_id) VALUES (10, 1)", "INSERT INTO at (tag_id, album_id) VALUES (1, 10)"])
-    proc{al.set_nested_attributes(:tags, [{:id=>30, :name=>'T2', :number=>3}], :fields=>[:name])}.must_raise(Sequel::MassAssignmentRestriction)
-    proc{al.set_nested_attributes(:tags, [{:name=>'T2', :number=>3}], :fields=>[:name])}.must_raise(Sequel::MassAssignmentRestriction)
+    al.set_nested_attributes(:tags, [{:id=>30, :name=>'T3', :number=>3}], :fields=>[:name])
+    al.tags.first.name.must_equal 'T3'
+    al.tags.first.number.must_equal 10
+    al.set_nested_attributes(:tags, [{:name=>'T4', :number=>3}], :fields=>[:name])
+    al.tags.last.name.must_equal 'T4'
+    al.tags.last.number.must_be_nil
   end
 
   it "should have set_nested_attributes method raise error if called with a bad association" do
@@ -695,8 +713,8 @@ describe "NestedAttributes plugin" do
     proc{@Album.load(:id=>10, :name=>'Al').set_nested_attributes(:tags, [{:id=>30, :name=>'T2', :number=>3}], :fields=>[:name])}.must_raise(Sequel::Error)
   end
 
-  it "should freeze nested_attributes_module when freezing model class" do
+  it "should not allow modifying ensted attributes after freezing" do
     @Artist.freeze
-    @Artist.nested_attributes_module.frozen?.must_equal true
+    proc{@Artist.nested_attributes :albums}.must_raise RuntimeError, TypeError
   end
 end

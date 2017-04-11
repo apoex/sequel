@@ -23,6 +23,7 @@ could conceivably be abused to do so:
 * Sequel.def_adapter_method (private)
 * Sequel::SQL::Expression.to_s_method (private)
 * Sequel::Plugins::HookClassMethods::ClassMethods#add_hook_type
+* Sequel::Plugins.def_dataset_methods
 
 As long as you don't call those with user input, you should not be
 vulnerable to code execution.
@@ -195,6 +196,14 @@ for plain strings as literal strings in update methods.
 
 The Sequel::Dataset#lock_style and Sequel::Model#lock! methods also treat
 an input string as SQL code. This method should not be called with user input.
+
+==== SQL Fragment passed to Virtual Row #` method
+
+Virtual row blocks currently support a #` method for using literal SQL:
+
+  DB[:table].where{a > `some SQL`}
+
+This method should not be called with user input.
 
 ==== SQL Type Names
 

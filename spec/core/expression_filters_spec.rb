@@ -17,13 +17,23 @@ describe "Blockless Ruby Filters" do
     @d.l(:x).must_equal 'x'
   end
   
-  it "should support qualified columns and aliased columns using symbols" do
+  with_symbol_splitting "should support qualified columns and aliased columns using symbols" do
     @d.l(:x__y).must_equal 'x.y'
     @d.l(:x___y).must_equal 'x AS y'
     @d.l(:x__y___z).must_equal 'x.y AS z'
   end
 
-  it "should support qualified columns using virtual rows" do
+  deprecated "should support qualified columns and aliased columns using symbols 2" do
+    @d.l(:x__y).must_equal 'x.y'
+    @d.l(:x___y).must_equal 'x AS y'
+    @d.l(:x__y___z).must_equal 'x.y AS z'
+  end
+
+  with_symbol_splitting "should support qualified columns using virtual rows" do
+    @d.l(Sequel.expr{x__y}).must_equal 'x.y'
+  end
+
+  deprecated "should support qualified columns using virtual rows" do
     @d.l(Sequel.expr{x__y}).must_equal 'x.y'
   end
 
@@ -35,15 +45,15 @@ describe "Blockless Ruby Filters" do
       @d.l(:x__y___z).must_equal 'x__y___z'
       @d.l(Sequel.expr{x__y}).must_equal 'x__y'
     ensure
-      Sequel.split_symbols = true
+      Sequel.split_symbols = :deprecated
     end
   end
 
   it "should support NOT with SQL functions" do
     @d.l(~Sequel.function(:is_blah)).must_equal 'NOT is_blah()'
     @d.l(~Sequel.function(:is_blah, :x)).must_equal 'NOT is_blah(x)'
-    @d.l(~Sequel.function(:is_blah, :x__y)).must_equal 'NOT is_blah(x.y)'
-    @d.l(~Sequel.function(:is_blah, :x, :x__y)).must_equal 'NOT is_blah(x, x.y)'
+    @d.l(~Sequel.function(:is_blah, Sequel[:x][:y])).must_equal 'NOT is_blah(x.y)'
+    @d.l(~Sequel.function(:is_blah, :x, Sequel[:x][:y])).must_equal 'NOT is_blah(x, x.y)'
   end
 
   it "should handle multiple ~" do
@@ -187,7 +197,7 @@ describe "Blockless Ruby Filters" do
     @d.lit(1 + Sequel.expr(:x)).must_equal '(1 + x)'
     @d.lit(2**65 - Sequel.+(:x, 1)).must_equal "(#{2**65} - (x + 1))"
     @d.lit(1.0 / Sequel.function(:x)).must_equal '(1.0 / x())'
-    @d.lit(BigDecimal.new('1.0') * Sequel.expr(:a__y)).must_equal '(1.0 * a.y)'
+    @d.lit(BigDecimal.new('1.0') * Sequel[:a][:y]).must_equal '(1.0 * a.y)'
     @d.lit(2 ** Sequel.cast(:x, Integer)).must_equal 'power(2, CAST(x AS integer))'
     @d.lit(1 + Sequel.lit('x')).must_equal '(1 + x)'
     @d.lit(1 + Sequel.lit('?', :x)).must_equal '(1 + x)'
@@ -320,12 +330,12 @@ describe "Blockless Ruby Filters" do
     proc{Sequel::SQL::BooleanExpression.invert(Sequel.expr(:x) + 2)}.must_raise(Sequel::Error)
   end
 
-  it "should return self on .lit" do
+  deprecated "should return self on .lit" do
     y = Sequel.expr(:x) + 1
     y.lit.must_equal y
   end
 
-  it "should return have .sql_literal return the literal SQL for the expression" do
+  deprecated "should return have .sql_literal return the literal SQL for the expression" do
     y = Sequel.expr(:x) + 1
     y.sql_literal(@d).must_equal '(x + 1)'
     y.sql_literal(@d).must_equal @d.literal(y)
@@ -535,7 +545,7 @@ describe Sequel::SQL::VirtualRow do
     @d.l{column}.must_equal '"column"'
   end
 
-  it "should treat methods without arguments that have embedded double underscores as qualified identifiers" do
+  with_symbol_splitting "should treat methods without arguments that have embedded double underscores as qualified identifiers" do
     @d.l{table__column}.must_equal '"table"."column"'
   end
 
@@ -543,12 +553,20 @@ describe Sequel::SQL::VirtualRow do
     @d.l{function(arg1, 10, 'arg3')}.must_equal 'function("arg1", 10, \'arg3\')'
   end
 
-  it "should treat methods with a block and no arguments as a function call with no arguments" do
+  deprecated "should treat methods with a block and no arguments as a function call with no arguments" do
     @d.l{version{}}.must_equal 'version()'
   end
 
-  it "should treat methods with a block and a leading argument :* as a function call with the SQL wildcard" do
+  it "should treat methods followed by function as a function call with no arguments" do
+    @d.l{version.function}.must_equal 'version()'
+  end
+
+  deprecated "should treat methods with a block and a leading argument :* as a function call with the SQL wildcard" do
     @d.l{count(:*){}}.must_equal 'count(*)'
+  end
+
+  it "should treat methods followed by function.* as a function call with * argument" do
+    @d.l{count.function.*}.must_equal 'count(*)'
   end
 
   it "should support * method on functions to raise error if function already has an argument" do
@@ -556,11 +574,11 @@ describe Sequel::SQL::VirtualRow do
   end
 
   it "should support * method on functions to use * as the argument" do
-    @d.l{count{}.*}.must_equal 'count(*)'
+    @d.l{count.function.*}.must_equal 'count(*)'
     @d.literal(Sequel.expr{sum(1) * 2}).must_equal '(sum(1) * 2)'
   end
 
-  it "should treat methods with a block and a leading argument :distinct as a function call with DISTINCT and the additional method arguments" do
+  deprecated "should treat methods with a block and a leading argument :distinct as a function call with DISTINCT and the additional method arguments" do
     @d.l{count(:distinct, column1){}}.must_equal 'count(DISTINCT "column1")'
     @d.l{count(:distinct, column1, column2){}}.must_equal 'count(DISTINCT "column1", "column2")'
   end
@@ -570,55 +588,102 @@ describe Sequel::SQL::VirtualRow do
     @d.l{count(column1, column2).distinct}.must_equal 'count(DISTINCT "column1", "column2")'
   end
 
-  it "should raise an error if an unsupported argument is used with a block" do
+  deprecated "should raise an error if an unsupported argument is used with a block" do
     proc{@d.where{count(:blah){}}}.must_raise(Sequel::Error)
   end
 
-  it "should treat methods with a block and a leading argument :over as a window function call" do
+  deprecated "should treat methods with a block and a leading argument :over as a window function call" do
     @d.l{rank(:over){}}.must_equal 'rank() OVER ()'
   end
 
-  it "should support :partition options for window function calls" do
+  deprecated "should support :partition options for window function calls" do
     @d.l{rank(:over, :partition=>column1){}}.must_equal 'rank() OVER (PARTITION BY "column1")'
     @d.l{rank(:over, :partition=>[column1, column2]){}}.must_equal 'rank() OVER (PARTITION BY "column1", "column2")'
   end
 
-  it "should support :args options for window function calls" do
+  deprecated "should support :args options for window function calls" do
     @d.l{avg(:over, :args=>column1){}}.must_equal 'avg("column1") OVER ()'
     @d.l{avg(:over, :args=>[column1, column2]){}}.must_equal 'avg("column1", "column2") OVER ()'
   end
 
-  it "should support :order option for window function calls" do
+  deprecated "should support :order option for window function calls" do
     @d.l{rank(:over, :order=>column1){}}.must_equal 'rank() OVER (ORDER BY "column1")'
     @d.l{rank(:over, :order=>[column1, column2]){}}.must_equal 'rank() OVER (ORDER BY "column1", "column2")'
   end
 
-  it "should support :window option for window function calls" do
+  deprecated "should support :window option for window function calls" do
     @d.l{rank(:over, :window=>:win){}}.must_equal 'rank() OVER ("win")'
   end
 
-  it "should support :*=>true option for window function calls" do
+  deprecated "should support :*=>true option for window function calls" do
     @d.l{count(:over, :* =>true){}}.must_equal 'count(*) OVER ()'
   end
 
-  it "should support :frame=>:all option for window function calls" do
+  deprecated "should support :frame=>:all option for window function calls" do
     @d.l{rank(:over, :frame=>:all){}}.must_equal 'rank() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)'
   end
 
-  it "should support :frame=>:rows option for window function calls" do
+  deprecated "should support :frame=>:rows option for window function calls" do
     @d.l{rank(:over, :frame=>:rows){}}.must_equal 'rank() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)'
   end
 
-  it "should support :frame=>'some string' option for window function calls" do
+  deprecated "should support :frame=>'some string' option for window function calls" do
     @d.l{rank(:over, :frame=>'RANGE BETWEEN 3 PRECEDING AND CURRENT ROW'){}}.must_equal 'rank() OVER (RANGE BETWEEN 3 PRECEDING AND CURRENT ROW)'
   end
 
-  it "should raise an error if an invalid :frame option is used" do
+  deprecated "should raise an error if an invalid :frame option is used" do
     proc{@d.l{rank(:over, :frame=>:blah){}}}.must_raise(Sequel::Error)
   end
 
-  it "should support all these options together" do
+  deprecated "should support all these options together" do
     @d.l{count(:over, :* =>true, :partition=>a, :order=>b, :window=>:win, :frame=>:rows){}}.must_equal 'count(*) OVER ("win" PARTITION BY "a" ORDER BY "b" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)'
+  end
+
+  it "should handle method.function.over as a window function call" do
+    @d.l{rank.function.over}.must_equal 'rank() OVER ()'
+  end
+
+  it "should handle method.function.over(:partition) as a window function call" do
+    @d.l{rank.function.over(:partition=>column1)}.must_equal 'rank() OVER (PARTITION BY "column1")'
+    @d.l{rank.function.over(:partition=>[column1, column2])}.must_equal 'rank() OVER (PARTITION BY "column1", "column2")'
+  end
+
+  it "should handle method(arg).over options as a window function call" do
+    @d.l{avg(column1).over}.must_equal 'avg("column1") OVER ()'
+    @d.l{avg(column1, column2).over}.must_equal 'avg("column1", "column2") OVER ()'
+  end
+
+  it "should handle method.function.over(:order) as a window function call" do
+    @d.l{rank.function.over(:order=>column1)}.must_equal 'rank() OVER (ORDER BY "column1")'
+    @d.l{rank.function.over(:order=>[column1, column2])}.must_equal 'rank() OVER (ORDER BY "column1", "column2")'
+  end
+
+  it "should handle method.function.over(:window) as a window function call" do
+    @d.l{rank.function.over(:window=>:win)}.must_equal 'rank() OVER ("win")'
+  end
+
+  it "should handle method.function.*.over as a window function call" do
+    @d.l{count.function.*.over}.must_equal 'count(*) OVER ()'
+  end
+
+  it "should handle method.function.over(:frame=>:all) as a window function call" do
+    @d.l{rank.function.over(:frame=>:all)}.must_equal 'rank() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)'
+  end
+
+  it "should handle method.function.over(:frame=>:rows) as a window function call" do
+    @d.l{rank.function.over(:frame=>:rows)}.must_equal 'rank() OVER (ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)'
+  end
+
+  it "should handle method.function.over(:frame=>'some string') as a window function call" do
+    @d.l{rank.function.over(:frame=>'RANGE BETWEEN 3 PRECEDING AND CURRENT ROW')}.must_equal 'rank() OVER (RANGE BETWEEN 3 PRECEDING AND CURRENT ROW)'
+  end
+
+  it "should raise an error if an invalid :frame option is used" do
+    proc{@d.l{rank.function.over(:frame=>:blah)}}.must_raise(Sequel::Error)
+  end
+
+  it "should support all over options together" do
+    @d.l{count.function.*.over(:partition=>a, :order=>b, :window=>:win, :frame=>:rows)}.must_equal 'count(*) OVER ("win" PARTITION BY "a" ORDER BY "b" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)'
   end
 
   it "should support order method on functions to specify orders for aggregate functions" do
@@ -626,7 +691,6 @@ describe Sequel::SQL::VirtualRow do
   end
 
   it "should support over method on functions to create window functions" do
-    @d.l{rank{}.over}.must_equal 'rank() OVER ()'
     @d.l{sum(c).over(:partition=>a, :order=>b, :window=>:win, :frame=>:rows)}.must_equal 'sum("c") OVER ("win" PARTITION BY "a" ORDER BY "b" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)'
   end
 
@@ -635,36 +699,36 @@ describe Sequel::SQL::VirtualRow do
   end
 
   it "should raise error if over is called on a function that already has a window " do
-    proc{@d.l{rank{}.over.over}}.must_raise(Sequel::Error)
+    proc{@d.l{rank.function.over.over}}.must_raise(Sequel::Error)
   end
 
   it "should raise an error if window functions are not supported" do
-    proc{@d.with_extend{def supports_window_functions?; false end}.l{count(:over, :* =>true, :partition=>a, :order=>b, :window=>:win, :frame=>:rows){}}}.must_raise(Sequel::Error)
-    proc{Sequel.mock.dataset.filter{count(:over, :* =>true, :partition=>a, :order=>b, :window=>:win, :frame=>:rows){}}.sql}.must_raise(Sequel::Error)
+    proc{@d.with_extend{def supports_window_functions?; false end}.l{count.function.*.over(:partition=>a, :order=>b, :window=>:win, :frame=>:rows)}}.must_raise(Sequel::Error)
+    proc{Sequel.mock.dataset.filter{count.function.*.over(:partition=>a, :order=>b, :window=>:win, :frame=>:rows)}.sql}.must_raise(Sequel::Error)
   end
   
   it "should handle lateral function calls" do
-    @d.l{rank{}.lateral}.must_equal 'LATERAL rank()' 
+    @d.l{rank.function.lateral}.must_equal 'LATERAL rank()' 
   end
 
   it "should handle ordered-set and hypothetical-set function calls" do
-    @d.l{mode{}.within_group(:a)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a")' 
-    @d.l{mode{}.within_group(:a, :b)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a", "b")' 
+    @d.l{mode.function.within_group(:a)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a")' 
+    @d.l{mode.function.within_group(:a, :b)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a", "b")' 
   end
 
   it "should handle filtered aggregate function calls" do
-    @d.l{count{}.*.filter(:a, :b)}.must_equal 'count(*) FILTER (WHERE ("a" AND "b"))' 
-    @d.l{count{}.*.filter(:a=>1)}.must_equal 'count(*) FILTER (WHERE ("a" = 1))'
-    @d.l{count{}.*.filter{b > 1}}.must_equal 'count(*) FILTER (WHERE ("b" > 1))'
-    @d.l{count{}.*.filter(:a=>1){b > 1}}.must_equal 'count(*) FILTER (WHERE (("a" = 1) AND ("b" > 1)))'
+    @d.l{count.function.*.filter(Sequel.&(:a, :b))}.must_equal 'count(*) FILTER (WHERE ("a" AND "b"))' 
+    @d.l{count.function.*.filter(:a=>1)}.must_equal 'count(*) FILTER (WHERE ("a" = 1))'
+    @d.l{count.function.*.filter{b > 1}}.must_equal 'count(*) FILTER (WHERE ("b" > 1))'
+    @d.l{count.function.*.filter(:a=>1){b > 1}}.must_equal 'count(*) FILTER (WHERE (("a" = 1) AND ("b" > 1)))'
   end
 
   it "should handle fitlered ordered-set and hypothetical-set function calls" do
-    @d.l{mode{}.within_group(:a).filter(:a=>1)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a") FILTER (WHERE ("a" = 1))' 
+    @d.l{mode.function.within_group(:a).filter(:a=>1)}.must_equal 'mode() WITHIN GROUP (ORDER BY "a") FILTER (WHERE ("a" = 1))' 
   end
 
   it "should handle function calls with ordinality" do
-    @d.l{foo{}.with_ordinality}.must_equal 'foo() WITH ORDINALITY' 
+    @d.l{foo.function.with_ordinality}.must_equal 'foo() WITH ORDINALITY' 
   end
 
   it "should support function method on identifiers to create functions" do
@@ -673,29 +737,44 @@ describe Sequel::SQL::VirtualRow do
     @d.l{sum.function(c, 1)}.must_equal 'sum("c", 1)'
   end
 
-  it "should support function method on qualified identifiers to create functions" do
+  with_symbol_splitting "should support function method on foo__bar methods to create functions" do
     @d.l{sch__rank.function}.must_equal 'sch.rank()' 
     @d.l{sch__sum.function(c)}.must_equal 'sch.sum("c")'
     @d.l{sch__sum.function(c, 1)}.must_equal 'sch.sum("c", 1)'
+    @d.l{Sequel.qualify(sch[:sum], x[:y]).function(c, 1)}.must_equal 'sch.sum.x.y("c", 1)'
+  end
+
+  it "should support function method on qualified identifiers to create functions" do
+    @d.l{sch[rank].function}.must_equal 'sch.rank()' 
+    @d.l{sch[sum].function(c)}.must_equal 'sch.sum("c")'
+    @d.l{sch[sum].function(c, 1)}.must_equal 'sch.sum("c", 1)'
+    @d.l{Sequel.qualify(sch[:sum], x[:y]).function(c, 1)}.must_equal 'sch.sum.x.y("c", 1)'
+  end
+
+  with_symbol_splitting "should support function method on qualified identifiers to create functions" do
     @d.l{Sequel.qualify(sch__sum, :x__y).function(c, 1)}.must_equal 'sch.sum.x.y("c", 1)'
   end
 
-  it "should handle quoted function names" do
+  it "should not quote function names created from identifiers by default" do
     @d = @d.with_extend{def supports_quoted_function_names?; true end}
-    @d.l{rank.function}.must_equal '"rank"()' 
+    @d.l{rank.function}.must_equal 'rank()' 
+  end
+
+  with_symbol_splitting "should handle quoted function names when using double underscores" do
+    @d = @d.with_extend{def supports_quoted_function_names?; true end}
     @d.l{sch__rank.function}.must_equal '"sch"."rank"()' 
   end
 
   it "should quote function names if a quoted function is used and database supports quoted function names" do
     @d = @d.with_extend{def supports_quoted_function_names?; true end}
-    @d.l{rank{}.quoted}.must_equal '"rank"()' 
-    @d.l{sch__rank{}.quoted}.must_equal '"sch__rank"()' 
+    @d.l{rank(1).quoted}.must_equal '"rank"(1)' 
+    @d.l{rank.function.quoted}.must_equal '"rank"()' 
+    @d.l{sch__rank(1).quoted}.must_equal '"sch__rank"(1)' 
   end
 
-  it "should not quote function names if an unquoted function is used" do
+  it "should not quote function names created from qualified identifiers if an unquoted function is used" do
     @d = @d.with_extend{def supports_quoted_function_names?; true end}
-    @d.l{rank.function.unquoted}.must_equal 'rank()' 
-    @d.l{sch__rank.function.unquoted}.must_equal 'sch.rank()' 
+    @d.l{sch[rank].function.unquoted}.must_equal 'sch.rank()' 
   end
 
   it "should deal with classes without requiring :: prefix" do
@@ -704,7 +783,7 @@ describe Sequel::SQL::VirtualRow do
     @d.l{num < Math::PI.to_i}.must_equal "(\"num\" < 3)"
   end
   
-  it "should deal with methods added to Object after requiring Sequel" do
+  deprecated "should deal with methods added to Object after requiring Sequel" do
     class Object
       def adsoiwemlsdaf; 42; end
     end
@@ -712,7 +791,7 @@ describe Sequel::SQL::VirtualRow do
     @d.l{a > adsoiwemlsdaf}.must_equal '("a" > "adsoiwemlsdaf")'
   end
   
-  it "should deal with private methods added to Kernel after requiring Sequel" do
+  deprecated "should deal with private methods added to Kernel after requiring Sequel" do
     module Kernel
       private
       def adsoiwemlsdaf2; 42; end
@@ -766,6 +845,9 @@ describe "Sequel core extension replacements" do
     Sequel.expr{|o| o.a}.must_be_kind_of(Sequel::SQL::Identifier)
     Sequel.expr{a}.must_be_kind_of(Sequel::SQL::Identifier)
     Sequel.expr(:a).must_be_kind_of(Sequel::SQL::Identifier)
+  end
+
+  with_symbol_splitting "Sequel.expr should return items wrapped in Sequel objects for splittable symbols" do
     Sequel.expr(:a__b).must_be_kind_of(Sequel::SQL::QualifiedIdentifier)
     Sequel.expr(:a___c).must_be_kind_of(Sequel::SQL::AliasedExpression)
     Sequel.expr(:a___c).expression.must_be_kind_of(Sequel::SQL::Identifier)
@@ -796,12 +878,12 @@ describe "Sequel core extension replacements" do
 
   it "Sequel.expr should treat blocks/procs as virtual rows and wrap the output" do
     l(Sequel.expr{1} + 1, "(1 + 1)")
-    l(Sequel.expr{o__a} + 1, "(o.a + 1)")
+    l(Sequel.expr{o[a]} + 1, "(o.a + 1)")
     l(Sequel.expr{[[:a, 1]]} & nil, "((a = 1) AND NULL)")
     l(Sequel.expr{|v| @o} + 1, "(foo + 1)")
 
     l(Sequel.expr(proc{1}) + 1, "(1 + 1)")
-    l(Sequel.expr(proc{o__a}) + 1, "(o.a + 1)")
+    l(Sequel.expr(proc{o[a]}) + 1, "(o.a + 1)")
     l(Sequel.expr(proc{[[:a, 1]]}) & nil, "((a = 1) AND NULL)")
     l(Sequel.expr(proc{|v| @o}) + 1, "(foo + 1)")
   end
@@ -1063,7 +1145,7 @@ describe "Sequel core extension replacements" do
 
   it "#* with no arguments should use a ColumnAll for Identifier and QualifiedIdentifier" do
     l(Sequel.expr(:a).*, 'a.*')
-    l(Sequel.expr(:a__b).*, 'a.b.*')
+    l(Sequel[:a][:b].*, 'a.b.*')
   end
 
   it "SQL::Blob should be aliasable and castable by default" do

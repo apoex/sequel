@@ -35,6 +35,7 @@ module Sequel
 
       # No-op method on ruby 1.9, which has a real +BasicObject+ class.
       def self.remove_methods!
+        Sequel::Deprecation.deprecate("Sequel::BasicObject#remove_methods!", "It has no effect, so stop calling it")
       end
     end
   end
@@ -142,19 +143,20 @@ module Sequel
         ([self.class] + self.class.comparison_attrs.map{|x| send(x)}).hash
       end
 
-      # Show the class name and instance variables for the object, necessary
-      # for correct operation on ruby 1.9.2.
+      # Show the class name and instance variables for the object.
       def inspect
         "#<#{self.class} #{instance_variables.map{|iv| "#{iv}=>#{instance_variable_get(iv).inspect}"}.join(', ')}>"
       end
 
       # Returns +self+, because <tt>SQL::Expression</tt> already acts like +LiteralString+.
       def lit
+        Sequel::Deprecation.deprecate("Sequel::SQL::Expression#lit", "This method returns self, so just use the receiver")
         self
       end
       
       # Alias of +to_s+
       def sql_literal(ds)
+        Sequel::Deprecation.deprecate("Sequel::SQL::Expression#sql_literal", "Call Sequel::Dataset#literal with the expression instead")
         s = String.new
         to_s_append(ds, s)
         s
@@ -379,7 +381,7 @@ module Sequel
       #
       #   Sequel.case([[{:a=>[2,3]}, 1]], 0) # SQL: CASE WHEN a IN (2, 3) THEN 1 ELSE 0 END
       #   Sequel.case({:a=>1}, 0, :b) # SQL: CASE b WHEN a THEN 1 ELSE 0 END
-      def case(*args) # core_sql ignore
+      def case(*args)
         SQL::CaseExpression.new(*args)
       end
 
@@ -428,7 +430,7 @@ module Sequel
       #   Sequel.deep_qualify(:table, Sequel.+(:column, 1)) # "table"."column" + 1
       #   Sequel.deep_qualify(:table, Sequel.like(:a, 'b')) # "table"."a" LIKE 'b' ESCAPE '\'
       def deep_qualify(qualifier, expr)
-        Sequel::Qualifier.new(Sequel, qualifier).transform(expr)
+        Sequel::Qualifier.new(qualifier).transform(expr)
       end
 
       # Return a delayed evaluation that uses the passed block. This is used
@@ -612,7 +614,7 @@ module Sequel
       #
       #    DB[:items].select{|o| o.count(Sequel.lit('DISTINCT ?', :a))}.sql #=>
       #      "SELECT count(DISTINCT a) FROM items"
-      def lit(s, *args) # core_sql ignore
+      def lit(s, *args)
         if args.empty?
           if s.is_a?(LiteralString)
             s
@@ -1928,39 +1930,52 @@ module Sequel
         Sequel::LiteralString.new(s)
       end
 
-      # Return an +Identifier+, +QualifiedIdentifier+, or +Function+, depending
-      # on arguments and whether a block is provided.  Does not currently call the block.
-      # See the class level documentation.
-      def method_missing(m, *args, &block)
-        if block
-          if args.empty?
-            Function.new(m)
-          else
-            case args.shift
-            when :*
-              Function.new(m, *args).*
-            when :distinct
-              Function.new(m, *args).distinct
-            when :over
-              opts = args.shift || OPTS
-              f = Function.new(m, *::Kernel.Array(opts[:args]))
-              f = f.* if opts[:*]
-              f.over(opts)
+      include(Module.new do
+        # Return an +Identifier+, +QualifiedIdentifier+, or +Function+, depending
+        # on arguments and whether a block is provided.  Does not currently call the block.
+        # See the class level documentation.
+        def method_missing(m, *args, &block)
+          if block
+            if args.empty?
+              Sequel::Deprecation.deprecate("Passing a block to a virtual row method to create a Sequel::SQL::Function", "Replace the block with a call to .function to create a function, or use the virtual_row_method_block extension")
+              Function.new(m)
             else
-              Kernel.raise(Error, 'unsupported VirtualRow method argument used with block')
+              case args.shift
+              when :*
+                Sequel::Deprecation.deprecate("Passing a block to a virtual row method with a :* argument to create a Sequel::SQL::Function", "Remove the :* argument and block and a call to .function.* to create a function(*) call, or use the virtual_row_method_block extension")
+                Function.new(m, *args).*
+              when :distinct
+                Sequel::Deprecation.deprecate("Passing a block to a virtual row method with a :distinct argument to create a Sequel::SQL::Function", "Remove the :distinct argument and block with a call to .function.distinct to create a function(DISTINCT ...) call, or use the virtual_row_method_block extension")
+                Function.new(m, *args).distinct
+              when :over
+                opts = args.shift || OPTS
+                f = Function.new(m, *::Kernel.Array(opts[:args]))
+                if opts[:*]
+                  Sequel::Deprecation.deprecate("Passing a block to a virtual row method with a :over argument and :* option to create a Sequel::SQL::WindowFunction", "Remove the :over argument, :* option and block with a call to .function.*.over with the options to create a function(*) OVER (...) call, or use the virtual_row_method_block extension")
+                  f = f.*
+                else
+                  Sequel::Deprecation.deprecate("Passing a block to a virtual row method with a :over argument to create a Sequel::SQL::WindowFunction", "Remove the :over argument and block with a call to .function.over with the options to create a function(...) OVER (...) call, or use the virtual_row_method_block extension")
+                end
+                f.over(opts)
+              else
+                Kernel.raise(Error, 'unsupported VirtualRow method argument used with block')
+              end
             end
-          end
-        elsif args.empty?
-          if Sequel.split_symbols?
-            table, column = m.to_s.split(DOUBLE_UNDERSCORE, 2)
-            column ? QualifiedIdentifier.new(table, column) : Identifier.new(m)
+          elsif args.empty?
+            if split = Sequel.split_symbols?
+              table, column = m.to_s.split(DOUBLE_UNDERSCORE, 2)
+              if column && split == :deprecated
+                Sequel::Deprecation.deprecate("Splitting virtual row method names", "Either set Sequel.split_symbols = true, or change #{m.inspect} to #{table}[:#{column}]")
+              end
+              column ? QualifiedIdentifier.new(table, column) : Identifier.new(m)
+            else
+              Identifier.new(m)
+            end
           else
-            Identifier.new(m)
+            Function.new(m, *args)
           end
-        else
-          Function.new(m, *args)
         end
-      end
+      end)
 
       Sequel::VIRTUAL_ROW = new
     end

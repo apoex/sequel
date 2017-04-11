@@ -20,22 +20,19 @@ Sequel::Deprecation.backtrace_filter = lambda{|line, lineno| lineno < 4 || line 
 Sequel.split_symbols = false if ENV['SEQUEL_NO_SPLIT_SYMBOLS']
 Sequel::Database.extension :columns_introspection if ENV['SEQUEL_COLUMNS_INTROSPECTION']
 Sequel::Model.cache_associations = false if ENV['SEQUEL_NO_CACHE_ASSOCIATIONS']
-if ENV['SEQUEL_MODEL_PREPARED_STATEMENTS']
-  Sequel::Model.plugin :prepared_statements
-  Sequel::Model.plugin :prepared_statements_associations
-end
+Sequel::Model.plugin :prepared_statements if ENV['SEQUEL_MODEL_PREPARED_STATEMENTS']
 Sequel::Model.use_transactions = false
-Sequel.cache_anonymous_models = false
+Sequel::Model.cache_anonymous_models = false
 
 require './spec/guards_helper'
 
-IDENTIFIER_MANGLING = !ENV['SEQUEL_NO_MANGLE'] unless defined?(IDENTIFIER_MANGLING)
+IDENTIFIER_MANGLING = !!ENV['SEQUEL_IDENTIFIER_MANGLING'] unless defined?(IDENTIFIER_MANGLING)
 
 unless defined?(DB)
-  opts = {}
-  opts[:identifier_mangling] = false unless IDENTIFIER_MANGLING
-  DB = Sequel.connect(ENV['SEQUEL_INTEGRATION_URL'], opts)
+  # SEQUEL5: Remove :identifier_mangling=>false
+  DB = Sequel.connect(ENV['SEQUEL_INTEGRATION_URL'], :identifier_mangling=>false)
   DB.extension(:freeze_datasets) if ENV['SEQUEL_FREEZE_DATASETS']
+  DB.extension(:identifier_mangling) if IDENTIFIER_MANGLING
 end
 
 if DB.adapter_scheme == :ibmdb || (DB.adapter_scheme == :ado && DB.database_type == :access)

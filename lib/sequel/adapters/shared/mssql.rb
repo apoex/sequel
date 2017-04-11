@@ -525,7 +525,7 @@ module Sequel
   
     module DatasetMethods
       include(Module.new do
-        Dataset.def_sql_method(self, :select, %w'with select distinct limit columns into from lock join where group having order compounds')
+        Dataset.def_sql_method(self, :select, %w'with select distinct limit columns into from lock join where group having compounds order')
       end)
       include EmulateOffsetWithRowNumber
 
@@ -576,9 +576,10 @@ module Sequel
       FETCH_NEXT = " FETCH NEXT ".freeze
 
       NON_SQL_OPTIONS = (Dataset::NON_SQL_OPTIONS + [:disable_insert_output, :mssql_unicode_strings]).freeze
+      LIMIT_ALL = Object.new.freeze
 
       Dataset.def_mutation_method(:disable_insert_output, :output, :module=>self)
-      Dataset.def_sql_method(self, :delete, %w'with delete from output from2 where')
+      Dataset.def_sql_method(self, :delete, %w'with delete limit from output from2 where')
       Dataset.def_sql_method(self, :insert, %w'with insert into columns output values')
       Dataset.def_sql_method(self, :update, [['if is_2005_or_later?', %w'with update limit table set output from where'], ['else', %w'update table set output from where']])
 
@@ -847,7 +848,33 @@ module Sequel
         (options_overlap(Sequel::Dataset::COUNT_FROM_SELF_OPTS) && !options_overlap([:limit])) ? unordered.from_self : super
       end
 
+      # If the dataset using a order without a limit or offset or custom SQL, 
+      # remove the order.  Compounds on Microsoft SQL Server have undefined
+      # order unless the result is specifically ordered.  Applying the current
+      # order before the compound doesn't work in all cases, such as when
+      # qualified identifiers are used.  If you want to ensure a order
+      # for a compound dataset, apply the order after all compounds have been
+      # added.
+      def compound_from_self
+        if @opts[:offset] && !@opts[:limit] && !is_2012_or_later?
+          clone(:limit=>LIMIT_ALL).from_self
+        elsif @opts[:order]  && !(@opts[:sql] || @opts[:limit] || @opts[:offset])
+          unordered
+        else
+          super
+        end
+      end
+
       private
+
+      # Allow update and delete for unordered, limited datasets only.
+      def check_not_limited!(type)
+        return if @opts[:skip_limit_check] && type != :truncate
+        #SEQUEL5
+        #raise Sequel::InvalidOperation, "Dataset##{type} not suppored on ordered, limited datasets" if opts[:order] && opts[:limit]
+        Sequel::Deprecation.deprecate("Dataset##{type} on ordered, limited datasets", "Call unlimited to not use a limit, or unordered to not use an order, or skip_limit_check to ignore the limit") if @opts[:order] && @opts[:limit]
+        super if type == :truncate || @opts[:offset]
+      end
 
       # Whether we are using SQL Server 2005 or later.
       def is_2005_or_later?
@@ -986,18 +1013,31 @@ module Sequel
       def select_limit_sql(sql)
         if l = @opts[:limit]
           return if is_2012_or_later? && @opts[:order] && @opts[:offset]
+          shared_limit_sql(sql, l)
+        end
+      end
 
-          if is_2005_or_later?
+      def shared_limit_sql(sql, l)
+        if is_2005_or_later?
+          if l == LIMIT_ALL
+            sql << " TOP (100) PERCENT"
+          else
             sql << TOP_PAREN
             literal_append(sql, l)
             sql << PAREN_CLOSE
-          else
-            sql << TOP
-            literal_append(sql, l)
           end
+        else
+          sql << TOP
+          literal_append(sql, l)
         end
       end
-      alias update_limit_sql select_limit_sql
+
+      def update_limit_sql(sql)
+        if l = @opts[:limit]
+          shared_limit_sql(sql, l)
+        end
+      end
+      alias delete_limit_sql update_limit_sql
 
       # Support different types of locking styles
       def select_lock_sql(sql)
